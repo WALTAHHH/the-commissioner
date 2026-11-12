@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { signIn } from '@/src/lib/auth'
+import { returnToAfterAuth } from '@/src/lib/auth-return'
 import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
@@ -20,7 +21,8 @@ export default function LoginPage() {
     if (error) {
       setError(error.message)
     } else {
-      router.push('/dashboard')
+      // Honour ?next= so invite links survive the sign-in round trip.
+      router.push(returnToAfterAuth('/dashboard'))
     }
   }
 
