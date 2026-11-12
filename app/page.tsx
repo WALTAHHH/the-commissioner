@@ -1,5 +1,6 @@
 import { createClient } from '@/src/utils/supabase/server'
 import Link from 'next/link'
+import SignOutButton from '@/src/components/SignOutButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,12 +22,7 @@ export default async function Home() {
           {user ? (
             <div className="flex flex-col gap-4">
               <p>Logged in as: {user.email}</p>
-              <Link
-                href="/login"
-                className="rounded bg-red-500 px-4 py-2 text-white hover:bg-red-600 text-center"
-              >
-                Sign Out (TODO)
-              </Link>
+              <SignOutButton />
             </div>
           ) : (
             <div className="flex flex-col gap-4">
