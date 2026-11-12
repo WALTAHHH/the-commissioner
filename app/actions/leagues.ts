@@ -2,6 +2,7 @@
 
 import { db } from '@/src/lib/db'
 import { leagues } from '@/src/db/schema/leagues'
+import { leagueMembers } from '@/src/db/schema/members'
 import { createClient } from '@/src/utils/supabase/server'
 import { slugify, randomSuffix } from '@/src/lib/slug'
 import {
@@ -64,6 +65,9 @@ export async function createLeague(
       : DEFAULT_FORMAT
 
   // 3. Insert, retrying with a suffixed slug if we lose a slug race.
+  //    League row + creator's commissioner membership are inserted in one
+  //    transaction (Phase 1 / T4): a league without its commissioner cannot
+  //    exist half-committed.
   const baseSlug = slugify(name)
   let lastError: unknown
 
@@ -72,16 +76,27 @@ export async function createLeague(
       attempt === 0 ? baseSlug : `${baseSlug}-${randomSuffix()}`
 
     try {
-      const [inserted] = await db
-        .insert(leagues)
-        .values({
-          name,
-          slug,
-          sport,
-          format,
-          commissionerId: user.id,
+      const inserted = await db.transaction(async (tx) => {
+        const [league] = await tx
+          .insert(leagues)
+          .values({
+            name,
+            slug,
+            sport,
+            format,
+            commissionerId: user.id,
+          })
+          .returning({ id: leagues.id })
+
+        await tx.insert(leagueMembers).values({
+          leagueId: league.id,
+          userId: user.id,
+          role: 'commissioner',
+          status: 'active',
         })
-        .returning({ id: leagues.id })
+
+        return league
+      })
 
       return { leagueId: inserted.id }
     } catch (err) {
