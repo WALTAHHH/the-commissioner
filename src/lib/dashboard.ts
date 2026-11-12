@@ -160,9 +160,10 @@ export async function listActiveMembers(
 }
 
 /**
- * Current season for display. league_seasons has no writer yet (league
- * creation does not seed a season — follow-up card), so the fallbacks are
- * load-bearing rather than defensive noise.
+ * Current season for display. League creation seeds an is_current season row
+ * (see createLeague), so new leagues resolve via the 'current' branch. The
+ * fallbacks stay load-bearing for leagues created before the seed existed,
+ * e.g. the ones already in the DB from the T2/T4 verification runs.
  */
 export async function resolveSeason(leagueId: string): Promise<SeasonInfo> {
   const rows = await db

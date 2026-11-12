@@ -1,7 +1,7 @@
 'use server'
 
 import { db } from '@/src/lib/db'
-import { leagues } from '@/src/db/schema/leagues'
+import { leagues, leagueSeasons } from '@/src/db/schema/leagues'
 import { leagueMembers } from '@/src/db/schema/members'
 import { createClient } from '@/src/utils/supabase/server'
 import { slugify, randomSuffix } from '@/src/lib/slug'
@@ -65,10 +65,13 @@ export async function createLeague(
       : DEFAULT_FORMAT
 
   // 3. Insert, retrying with a suffixed slug if we lose a slug race.
-  //    League row + creator's commissioner membership are inserted in one
-  //    transaction (Phase 1 / T4): a league without its commissioner cannot
-  //    exist half-committed.
+  //    League row + creator's commissioner membership + the opening
+  //    league_seasons row are inserted in one transaction (Phase 1 / T4 +
+  //    season seed follow-up): a league without its commissioner or current
+  //    season cannot exist half-committed, and a slug-conflict retry rolls
+  //    all three back together.
   const baseSlug = slugify(name)
+  const seasonYear = new Date().getUTCFullYear()
   let lastError: unknown
 
   for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
@@ -93,6 +96,12 @@ export async function createLeague(
           userId: user.id,
           role: 'commissioner',
           status: 'active',
+        })
+
+        await tx.insert(leagueSeasons).values({
+          leagueId: league.id,
+          seasonYear,
+          isCurrent: true,
         })
 
         return league
