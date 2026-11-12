@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { signUp } from '@/src/lib/auth'
+import { returnToAfterAuth } from '@/src/lib/auth-return'
 import { useRouter } from 'next/navigation'
 
 export default function SignUpPage() {
@@ -20,7 +21,8 @@ export default function SignUpPage() {
     if (error) {
       setError(error.message)
     } else {
-      router.push('/dashboard')
+      // Honour ?next= so invite links survive the sign-up round trip.
+      router.push(returnToAfterAuth('/dashboard'))
     }
   }
 
