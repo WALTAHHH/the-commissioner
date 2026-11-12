@@ -30,6 +30,10 @@ const UUID_REGEX =
 /** Tokens are UUIDs; anything longer is input noise, not one of our links. */
 const MAX_TOKEN_LENGTH = 64
 
+/** Same as UUID_REGEX but without anchors, for scanning inside larger text. */
+export const UUID_PATTERN =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+
 export function isUuid(value: unknown): value is string {
   return typeof value === 'string' && UUID_REGEX.test(value)
 }
@@ -40,6 +44,30 @@ export function normalizeToken(value: unknown): string | null {
   const trimmed = value.trim()
   if (!trimmed || trimmed.length > MAX_TOKEN_LENGTH) return null
   return isUuid(trimmed) ? trimmed : null
+}
+
+/**
+ * Pull the token out of whatever a user pastes: a full invite URL, a bare
+ * /invite/<token> path, or the token itself. Returns null when no UUID
+ * candidate is found so callers can show a friendly error instead of
+ * navigating to a dead link.
+ */
+export function extractInviteToken(input: string): string | null {
+  if (typeof input !== 'string') return null
+  const trimmed = input.trim()
+  if (!trimmed) return null
+
+  // 1. exact token (maybe the user already trimmed)
+  const direct = normalizeToken(trimmed)
+  if (direct) return direct
+
+  // 2. path or URL containing /invite/<token>
+  const prefixMatch = trimmed.match(/\/invite\/([0-9a-f][0-9a-f-]{30,})/i)
+  if (prefixMatch) return normalizeToken(prefixMatch[1])
+
+  // 3. any UUID inside the string (e.g. pasted chat text)
+  const uuidMatch = trimmed.match(UUID_PATTERN)
+  return uuidMatch ? normalizeToken(uuidMatch[0]) : null
 }
 
 /**
