@@ -11,15 +11,9 @@ import {
 } from 'drizzle-orm/pg-core';
 import { users } from '../schema';
 
-// Leagues table
-export const leagues = pgTable('leagues', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  name: text('name').notNull(),
-  description: text('description'),
-  commissionerId: uuid('commissioner_id').references(() => users.id).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+// Leagues table (defined in ./leagues.ts, re-exported for convenience)
+import { leagues } from './leagues';
+export { leagues };
 
 // League members (junction between users and leagues)
 export const leagueMembers = pgTable('league_members', {
