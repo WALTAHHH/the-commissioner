@@ -5,28 +5,18 @@ import {
   timestamp,
   boolean,
   primaryKey,
-  foreignKey,
   uniqueIndex,
-  index,
 } from 'drizzle-orm/pg-core';
-import { users } from '../schema';
 
 // Leagues table (defined in ./leagues.ts, re-exported for convenience)
 import { leagues } from './leagues';
 export { leagues };
 
-// League members (junction between users and leagues)
-export const leagueMembers = pgTable('league_members', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  leagueId: uuid('league_id').references(() => leagues.id).notNull(),
-  userId: uuid('user_id').references(() => users.id).notNull(),
-  joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
-  leftAt: timestamp('left_at', { withTimezone: true }),
-  // status could be derived from leftAt
-}, (table) => [
-  uniqueIndex('league_members_league_user_idx').on(table.leagueId, table.userId),
-  index('league_members_user_idx').on(table.userId),
-]);
+// league_members canonical definition moved to ./members.ts (Phase 1 / T4):
+// role / team_name / status columns, user_id -> auth.users. Re-exported so
+// existing imports keep working.
+import { leagueMembers } from './members';
+export { leagueMembers };
 
 // Roles are league-scoped
 export const roles = pgTable('roles', {
