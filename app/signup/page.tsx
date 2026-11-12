@@ -20,7 +20,7 @@ export default function SignUpPage() {
     if (error) {
       setError(error.message)
     } else {
-      router.push('/')
+      router.push('/dashboard')
     }
   }
 
