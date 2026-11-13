@@ -57,6 +57,36 @@ export type InvitationRow = {
   created_at: string
 }
 
+export type RuleCategoryRow = {
+  id: string
+  league_id: string
+  name: string
+  display_order: number
+  created_at: string
+}
+
+export type RuleRow = {
+  id: string
+  league_id: string
+  category_id: string | null
+  title: string
+  body: string
+  is_published: boolean
+  created_by: string
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+export type RuleVersionRow = {
+  id: string
+  rule_id: string
+  body: string
+  changed_by: string
+  changed_at: string
+}
+
+
 /** The subset of `auth.users` we can reach: GoTrue admin API, not PostgREST. */
 export type UserIdentityRow = {
   id: string

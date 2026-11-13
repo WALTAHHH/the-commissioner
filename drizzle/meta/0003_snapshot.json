@@ -1,5 +1,5 @@
 {
-  "id": "bbd0ab0d-e66b-4cff-8861-27d436386db7",
+  "id": "f62946c5-b7f8-4caa-84cf-4be915c9624b",
   "prevId": "7812c748-d08a-4343-8012-042443a0e27d",
   "version": "7",
   "dialect": "postgresql",
@@ -895,8 +895,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.integration_connections": {
-      "name": "integration_connections",
+    "public.rule_categories": {
+      "name": "rule_categories",
       "schema": "",
       "columns": {
         "id": {
@@ -912,27 +912,15 @@
           "primaryKey": false,
           "notNull": true
         },
-        "provider": {
-          "name": "provider",
+        "name": {
+          "name": "name",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "external_league_id": {
-          "name": "external_league_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "last_synced_at": {
-          "name": "last_synced_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "uuid",
+        "display_order": {
+          "name": "display_order",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
@@ -942,18 +930,11 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
         }
       },
       "indexes": {
-        "integration_connections_league_provider_idx": {
-          "name": "integration_connections_league_provider_idx",
+        "rule_categories_league_order_idx": {
+          "name": "rule_categories_league_order_idx",
           "columns": [
             {
               "expression": "league_id",
@@ -962,28 +943,7 @@
               "nulls": "last"
             },
             {
-              "expression": "provider",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "integration_connections_external_league_idx": {
-          "name": "integration_connections_external_league_idx",
-          "columns": [
-            {
-              "expression": "provider",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "external_league_id",
+              "expression": "display_order",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -996,9 +956,9 @@
         }
       },
       "foreignKeys": {
-        "integration_connections_league_id_leagues_id_fk": {
-          "name": "integration_connections_league_id_leagues_id_fk",
-          "tableFrom": "integration_connections",
+        "rule_categories_league_id_leagues_id_fk": {
+          "name": "rule_categories_league_id_leagues_id_fk",
+          "tableFrom": "rule_categories",
           "tableTo": "leagues",
           "columnsFrom": [
             "league_id"
@@ -1016,8 +976,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.integration_sync_log": {
-      "name": "integration_sync_log",
+    "public.rule_versions": {
+      "name": "rule_versions",
       "schema": "",
       "columns": {
         "id": {
@@ -1027,46 +987,219 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "connection_id": {
-          "name": "connection_id",
+        "rule_id": {
+          "name": "rule_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "synced_at": {
-          "name": "synced_at",
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "changed_by": {
+          "name": "changed_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "changed_at": {
+          "name": "changed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "rule_versions_rule_id_idx": {
+          "name": "rule_versions_rule_id_idx",
+          "columns": [
+            {
+              "expression": "rule_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "rule_versions_rule_id_rules_id_fk": {
+          "name": "rule_versions_rule_id_rules_id_fk",
+          "tableFrom": "rule_versions",
+          "tableTo": "rules",
+          "columnsFrom": [
+            "rule_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "rule_versions_changed_by_users_id_fk": {
+          "name": "rule_versions_changed_by_users_id_fk",
+          "tableFrom": "rule_versions",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "changed_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.rules": {
+      "name": "rules",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "league_id": {
+          "name": "league_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category_id": {
+          "name": "category_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_published": {
+          "name": "is_published",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
         },
-        "status": {
-          "name": "status",
-          "type": "text",
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "now()"
         },
-        "error_message": {
-          "name": "error_message",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "raw_snapshot": {
-          "name": "raw_snapshot",
-          "type": "jsonb",
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "rules_league_id_idx": {
+          "name": "rules_league_id_idx",
+          "columns": [
+            {
+              "expression": "league_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "rules_category_id_idx": {
+          "name": "rules_category_id_idx",
+          "columns": [
+            {
+              "expression": "category_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
-        "integration_sync_log_connection_id_integration_connections_id_fk": {
-          "name": "integration_sync_log_connection_id_integration_connections_id_fk",
-          "tableFrom": "integration_sync_log",
-          "tableTo": "integration_connections",
+        "rules_league_id_leagues_id_fk": {
+          "name": "rules_league_id_leagues_id_fk",
+          "tableFrom": "rules",
+          "tableTo": "leagues",
           "columnsFrom": [
-            "connection_id"
+            "league_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "rules_category_id_rule_categories_id_fk": {
+          "name": "rules_category_id_rule_categories_id_fk",
+          "tableFrom": "rules",
+          "tableTo": "rule_categories",
+          "columnsFrom": [
+            "category_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "rules_created_by_users_id_fk": {
+          "name": "rules_created_by_users_id_fk",
+          "tableFrom": "rules",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "created_by"
           ],
           "columnsTo": [
             "id"
