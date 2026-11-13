@@ -13,6 +13,7 @@ import {
   ChevronDown,
   LogOut,
   Plug,
+  Activity,
 } from 'lucide-react'
 import SignOutButton from './SignOutButton'
 import { cn } from 'cn'
@@ -67,6 +68,12 @@ export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavPro
       href: leagueId ? `/leagues/${leagueId}/rules` : null,
       icon: <BookOpen className="h-5 w-5" />,
       active: inLeague('rules'),
+    },
+    {
+      label: 'Activity',
+      href: leagueId ? `/leagues/${leagueId}/activity` : null,
+      icon: <Activity className="h-5 w-5" />,
+      active: inLeague('activity'),
     },
     {
       label: 'Integrations',

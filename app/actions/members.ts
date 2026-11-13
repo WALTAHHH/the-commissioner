@@ -3,6 +3,9 @@
 import { revalidatePath } from 'next/cache'
 import { db } from '@/src/lib/db'
 import { createClient } from '@/src/utils/supabase/server'
+import { recordActivity } from '@/src/lib/activity'
+import { displayName } from '@/src/lib/display'
+import { fetchIdentities } from '@/src/lib/dashboard'
 import type { LeagueMemberRow, LeagueRow } from '@/src/db/rows'
 
 export interface RemoveMemberResult {
@@ -68,10 +71,11 @@ export async function removeLeagueMember(
 
   // 2. Target must be an active membership row of THIS league. The league_id
   //    filter is what stops a memberId from another league being removed by
-  //    id — the unique index makes maybeSingle() safe.
+  //    id — the unique index makes maybeSingle() safe. user_id/team_name are
+  //    carried so the audit event can say *who* left, not just that someone did.
   const { data: targetData, error: targetError } = await db
     .from('league_members')
-    .select('role, status')
+    .select('role, status, user_id, team_name')
     .eq('id', memberId)
     .eq('league_id', leagueId)
     .maybeSingle()
@@ -83,7 +87,10 @@ export async function removeLeagueMember(
     return { error: 'Member not found in this league.' }
   }
 
-  const target = targetData as unknown as Pick<LeagueMemberRow, 'role' | 'status'>
+  const target = targetData as unknown as Pick<
+    LeagueMemberRow,
+    'role' | 'status' | 'user_id' | 'team_name'
+  >
   if (target.status !== 'active') {
     return { error: 'This member is not active.' }
   }
@@ -103,6 +110,22 @@ export async function removeLeagueMember(
     console.error('removeLeagueMember update error:', updateError)
     return { error: 'Could not remove the member. Please try again.' }
   }
+
+  // Audit trail (best-effort — see src/lib/activity.ts). One GoTrue lookup
+  // buys a readable "who left" description; if the identity is unreachable
+  // we degrade to the team name / generic copy instead of skipping the event.
+  const identity = await fetchIdentities([target.user_id])
+  const removedName = identity.get(target.user_id)
+  const label = removedName
+    ? displayName(removedName)
+    : target.team_name ?? 'A member'
+  await recordActivity(
+    leagueId,
+    user.id,
+    'member_removed',
+    `${label} was removed from the league`,
+    { memberId, userId: target.user_id, role: target.role, teamName: target.team_name },
+  )
 
   revalidatePath(`/leagues/${leagueId}/members`)
   return {}
