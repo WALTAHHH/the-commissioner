@@ -1,11 +1,9 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { and, eq } from 'drizzle-orm'
 import { db } from '@/src/lib/db'
-import { leagues } from '@/src/db/schema/leagues'
-import { leagueMembers } from '@/src/db/schema/members'
 import { createClient } from '@/src/utils/supabase/server'
+import type { LeagueMemberRow, LeagueRow } from '@/src/db/rows'
 
 export interface RemoveMemberResult {
   error?: string
@@ -21,11 +19,10 @@ const UUID_REGEX =
  * preserved; the unique (league_id, user_id) index means re-joining later
  * flips the same row back to 'active').
  *
- * Authorization is enforced here, not by RLS: the server-action pool
- * connects as the table owner (postgres) which bypasses RLS. The
- * commissioner check is against leagues.commissioner_id, the source of
- * truth (membership `role` is display state and may lag custom-role work
- * in Phase 2).
+ * Authorization is enforced here, not by RLS: the service-role key in
+ * src/lib/db.ts bypasses RLS entirely, so an in-app check is the only gate. The
+ * commissioner check is against leagues.commissioner_id, the source of truth
+ * (membership `role` is display state and may lag custom-role work in Phase 2).
  *
  * formData fields: leagueId, memberId (both uuid).
  */
@@ -53,37 +50,40 @@ export async function removeLeagueMember(
   }
 
   // 1. Caller must be the league's commissioner.
-  const [league] = await db
-    .select({ commissionerId: leagues.commissionerId })
-    .from(leagues)
-    .where(eq(leagues.id, leagueId))
-    .limit(1)
+  const { data: leagueData, error: leagueError } = await db
+    .from('leagues')
+    .select('commissioner_id')
+    .eq('id', leagueId)
+    .maybeSingle()
 
-  if (!league) {
+  if (leagueError) {
+    console.error('removeLeagueMember league error:', leagueError)
+  }
+  if (!leagueData) {
     return { error: 'League not found.' }
   }
-  if (league.commissionerId !== user.id) {
+  if ((leagueData as unknown as Pick<LeagueRow, 'commissioner_id'>).commissioner_id !== user.id) {
     return { error: 'Only the commissioner can remove members.' }
   }
 
-  // 2. Target must be an active membership row of THIS league.
-  const [target] = await db
-    .select({
-      role: leagueMembers.role,
-      status: leagueMembers.status,
-    })
-    .from(leagueMembers)
-    .where(
-      and(
-        eq(leagueMembers.id, memberId),
-        eq(leagueMembers.leagueId, leagueId),
-      ),
-    )
-    .limit(1)
+  // 2. Target must be an active membership row of THIS league. The league_id
+  //    filter is what stops a memberId from another league being removed by
+  //    id — the unique index makes maybeSingle() safe.
+  const { data: targetData, error: targetError } = await db
+    .from('league_members')
+    .select('role, status')
+    .eq('id', memberId)
+    .eq('league_id', leagueId)
+    .maybeSingle()
 
-  if (!target) {
+  if (targetError) {
+    console.error('removeLeagueMember target error:', targetError)
+  }
+  if (!targetData) {
     return { error: 'Member not found in this league.' }
   }
+
+  const target = targetData as unknown as Pick<LeagueMemberRow, 'role' | 'status'>
   if (target.status !== 'active') {
     return { error: 'This member is not active.' }
   }
@@ -91,16 +91,18 @@ export async function removeLeagueMember(
     return { error: 'The commissioner cannot be removed.' }
   }
 
-  // 3. Soft-remove.
-  await db
-    .update(leagueMembers)
-    .set({ status: 'removed' })
-    .where(
-      and(
-        eq(leagueMembers.id, memberId),
-        eq(leagueMembers.leagueId, leagueId),
-      ),
-    )
+  // 3. Soft-remove, re-pinning both ids in the WHERE so the row cannot change
+  //    league or be re-activated between steps 2 and 3.
+  const { error: updateError } = await db
+    .from('league_members')
+    .update({ status: 'removed' })
+    .eq('id', memberId)
+    .eq('league_id', leagueId)
+
+  if (updateError) {
+    console.error('removeLeagueMember update error:', updateError)
+    return { error: 'Could not remove the member. Please try again.' }
+  }
 
   revalidatePath(`/leagues/${leagueId}/members`)
   return {}

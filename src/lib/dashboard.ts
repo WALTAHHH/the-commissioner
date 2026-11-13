@@ -2,8 +2,17 @@
  * Read queries backing the league dashboard, league settings and the
  * authenticated home (Phase 1 / T5).
  *
- * Server-only: imports the Drizzle pool. Everything here is a SELECT — writes
- * stay in app/actions/*.
+ * Server-only. Everything here is a read — writes live in app/actions/*.
+ * Queries go over HTTPS to PostgREST via the service-role client in
+ * `src/lib/db.ts`, so column names are the raw DB names (`league_id`, not
+ * `leagueId`) and results are mapped to camelCase types at the boundary — the
+ * exported shapes below are the page contract and did not change.
+ *
+ * Identity fields (email, display name) come from `auth.users`, which
+ * PostgREST does not expose (`PGRST205: Could not find the table
+ * 'public.auth.users'`) — even for the service role. They are read through
+ * GoTrue's admin API instead, one HTTPS call per user, in parallel and with
+ * failures degraded to `null` rather than a broken page.
  *
  * Access-control rule used by every league page (same semantics as the Phase 1
  * /T4 member directory): a league is visible to a viewer when they hold an
@@ -11,13 +20,16 @@
  * (leagues.commissioner_id is the source of truth; the membership `role` is a
  * second, belt-and-braces signal for leagues whose row was backfilled).
  * Non-members get a 404, never a 403 — we do not confirm the league exists.
+ * The service-role key bypasses RLS, so this check is the only gate.
  */
 
-import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/src/lib/db'
-import { leagues, leagueSeasons } from '@/src/db/schema/leagues'
-import { leagueMembers } from '@/src/db/schema/members'
-import { authUsers } from '@/src/db/schema/auth'
+import type {
+  LeagueMemberRow,
+  LeagueRow,
+  LeagueSeasonRow,
+  UserIdentityRow,
+} from '@/src/db/rows'
 
 /** How many members the dashboard previews before "View all members". */
 export const MEMBER_PREVIEW_LIMIT = 6
@@ -75,59 +87,135 @@ export type UserLeagueRow = {
   memberCount: number
 }
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Metadata strings are user-supplied and optional; anything else is ignored. */
+function metaString(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
 /**
- * One round trip: the league, its commissioner's email, and the viewer's
- * membership row. Returns null when the league does not exist OR is not
- * visible to this viewer — callers render notFound() for both so the two
- * cases are indistinguishable from outside.
+ * Display identity for a set of auth user ids, via GoTrue's admin API.
+ *
+ * Batched into parallel single lookups because PostgREST cannot read the auth
+ * schema and GoTrue has no "get these N users" endpoint. One call per user is
+ * the known cost of that (fine at league-member scale, i.e. dozens; a league of
+ * thousands of members would want a public-side profile table instead, which is
+ * what the unused `public.users` mirror was for).
+ *
+ * Never throws: an unreachable or deleted user simply is absent from the map,
+ * and callers fall back to 'Unknown member' (see src/lib/display.ts).
+ */
+async function fetchIdentities(
+  userIds: readonly string[],
+): Promise<Map<string, UserIdentityRow>> {
+  const unique = Array.from(
+    new Set(userIds.filter((id) => typeof id === 'string' && UUID_REGEX.test(id))),
+  )
+
+  const results = await Promise.all(
+    unique.map(async (id): Promise<UserIdentityRow | null> => {
+      try {
+        const { data, error } = await db.auth.admin.getUserById(id)
+        if (error || !data?.user) return null
+        const metadata = (data.user.user_metadata ?? {}) as Record<string, unknown>
+        return {
+          id,
+          email: data.user.email ?? null,
+          fullName: metaString(metadata.full_name),
+          name: metaString(metadata.name),
+          nickname: metaString(metadata.nickname),
+        }
+      } catch {
+        return null
+      }
+    }),
+  )
+
+  return new Map(results.filter((row): row is UserIdentityRow => row !== null).map((r) => [r.id, r]))
+}
+
+/**
+ * The league, its commissioner's email, and the viewer's membership row.
+ * Returns null when the league does not exist OR is not visible to this
+ * viewer — callers render notFound() for both so the two cases are
+ * indistinguishable from outside.
  */
 export async function loadLeagueContext(
   leagueId: string,
   userId: string,
 ): Promise<LeagueContext | null> {
-  const [row] = await db
-    .select({
-      id: leagues.id,
-      name: leagues.name,
-      sport: leagues.sport,
-      format: leagues.format,
-      slug: leagues.slug,
-      createdAt: leagues.createdAt,
-      commissionerId: leagues.commissionerId,
-      commissionerEmail: authUsers.email,
-      viewerRole: leagueMembers.role,
-      viewerStatus: leagueMembers.status,
-    })
-    .from(leagues)
-    .leftJoin(authUsers, eq(authUsers.id, leagues.commissionerId))
-    .leftJoin(
-      leagueMembers,
-      and(eq(leagueMembers.leagueId, leagues.id), eq(leagueMembers.userId, userId)),
-    )
-    .where(eq(leagues.id, leagueId))
-    .limit(1)
+  const { data: leagueData, error: leagueError } = await db
+    .from('leagues')
+    .select('id, name, sport, format, slug, commissioner_id, created_at')
+    .eq('id', leagueId)
+    .maybeSingle()
 
-  if (!row) return null
+  if (leagueError) {
+    console.error('loadLeagueContext league error:', leagueError)
+  }
+  if (!leagueData) {
+    return null
+  }
+  const league = leagueData as unknown as LeagueRow
 
-  const isCommissioner = row.commissionerId === userId || row.viewerRole === 'commissioner'
-  const isMember = row.viewerStatus === 'active'
+  // The viewer's membership row, then the commissioner's identity. The second
+  // lookup is only needed for a viewer who passed the gate, so it runs last.
+  const { data: membershipData, error: membershipError } = await db
+    .from('league_members')
+    .select('role, status')
+    .eq('league_id', leagueId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (membershipError) {
+    console.error('loadLeagueContext membership error:', membershipError)
+  }
+
+  const membership = membershipData as
+    | { role: string; status: string }
+    | null
+    | undefined
+
+  const isCommissioner =
+    league.commissioner_id === userId || membership?.role === 'commissioner'
+  const isMember = membership?.status === 'active'
 
   if (!isCommissioner && !isMember) return null
 
-  const { viewerStatus: _viewerStatus, ...rest } = row
-  return { ...rest, isCommissioner, isMember }
+  const identities = await fetchIdentities([league.commissioner_id])
+
+  return {
+    id: league.id,
+    name: league.name,
+    sport: league.sport,
+    format: league.format,
+    slug: league.slug,
+    createdAt: new Date(league.created_at),
+    commissionerId: league.commissioner_id,
+    commissionerEmail: identities.get(league.commissioner_id)?.email ?? null,
+    viewerRole: membership?.role ?? null,
+    isCommissioner,
+    isMember,
+  }
 }
 
 /** Active membership rows only — 'removed'/'inactive' are excluded by design. */
 export async function countActiveMembers(leagueId: string): Promise<number> {
-  const [row] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(leagueMembers)
-    .where(
-      and(eq(leagueMembers.leagueId, leagueId), eq(leagueMembers.status, 'active')),
-    )
+  const { count, error } = await db
+    .from('league_members')
+    .select('id', { count: 'exact', head: true })
+    .eq('league_id', leagueId)
+    .eq('status', 'active')
 
-  return row?.count ?? 0
+  if (error) {
+    console.error('countActiveMembers error:', error)
+    return 0
+  }
+  return count ?? 0
 }
 
 /**
@@ -138,25 +226,44 @@ export async function listActiveMembers(
   leagueId: string,
   limit?: number,
 ): Promise<MemberRow[]> {
-  const query = db
-    .select({
-      id: leagueMembers.id,
-      role: leagueMembers.role,
-      teamName: leagueMembers.teamName,
-      joinedAt: leagueMembers.joinedAt,
-      email: authUsers.email,
-      fullName: sql<string | null>`${authUsers.rawUserMetaData} ->> 'full_name'`,
-      name: sql<string | null>`${authUsers.rawUserMetaData} ->> 'name'`,
-      nickname: sql<string | null>`${authUsers.rawUserMetaData} ->> 'nickname'`,
-    })
-    .from(leagueMembers)
-    .innerJoin(authUsers, eq(leagueMembers.userId, authUsers.id))
-    .where(
-      and(eq(leagueMembers.leagueId, leagueId), eq(leagueMembers.status, 'active')),
-    )
-    .orderBy(asc(leagueMembers.joinedAt))
+  let membersQuery = db
+    .from('league_members')
+    .select('id, role, team_name, joined_at, user_id')
+    .eq('league_id', leagueId)
+    .eq('status', 'active')
+    .order('joined_at', { ascending: true })
 
-  return limit === undefined ? query : query.limit(limit)
+  if (limit !== undefined) {
+    membersQuery = membersQuery.limit(limit)
+  }
+
+  const { data: membersData, error: membersError } = await membersQuery
+
+  if (membersError) {
+    console.error('listActiveMembers error:', membersError)
+    return []
+  }
+
+  const members = (membersData ?? []) as unknown as Pick<
+    LeagueMemberRow,
+    'id' | 'role' | 'team_name' | 'joined_at' | 'user_id'
+  >[]
+
+  const identities = await fetchIdentities(members.map((m) => m.user_id))
+
+  return members.map((member) => {
+    const user = identities.get(member.user_id)
+    return {
+      id: member.id,
+      role: member.role,
+      teamName: member.team_name,
+      joinedAt: new Date(member.joined_at),
+      email: user?.email ?? null,
+      fullName: user?.fullName ?? null,
+      name: user?.name ?? null,
+      nickname: user?.nickname ?? null,
+    }
+  })
 }
 
 /**
@@ -166,18 +273,25 @@ export async function listActiveMembers(
  * e.g. the ones already in the DB from the T2/T4 verification runs.
  */
 export async function resolveSeason(leagueId: string): Promise<SeasonInfo> {
-  const rows = await db
-    .select({
-      seasonYear: leagueSeasons.seasonYear,
-      isCurrent: leagueSeasons.isCurrent,
-    })
-    .from(leagueSeasons)
-    .where(eq(leagueSeasons.leagueId, leagueId))
-    .orderBy(desc(leagueSeasons.seasonYear))
+  const { data, error } = await db
+    .from('league_seasons')
+    .select('season_year, is_current')
+    .eq('league_id', leagueId)
+    .order('season_year', { ascending: false })
 
-  const current = rows.find((r) => r.isCurrent === true)
-  if (current) return { seasonYear: current.seasonYear, source: 'current' }
-  if (rows.length > 0) return { seasonYear: rows[0].seasonYear, source: 'latest' }
+  if (error) {
+    console.error('resolveSeason error:', error)
+    return { seasonYear: new Date().getUTCFullYear(), source: 'inferred' }
+  }
+
+  const rows = (data ?? []) as unknown as Pick<
+    LeagueSeasonRow,
+    'season_year' | 'is_current'
+  >[]
+
+  const current = rows.find((row) => row.is_current === true)
+  if (current) return { seasonYear: current.season_year, source: 'current' }
+  if (rows.length > 0) return { seasonYear: rows[0].season_year, source: 'latest' }
 
   return { seasonYear: new Date().getUTCFullYear(), source: 'inferred' }
 }
@@ -189,51 +303,82 @@ export async function resolveSeason(leagueId: string): Promise<SeasonInfo> {
  * A league is included when the user has an ACTIVE membership row or owns it
  * via leagues.commissioner_id (same rule as loadLeagueContext). The
  * commissioner branch has a UNIQUE(league_id, user_id) membership row by
- * construction (createLeague writes it in one transaction), so it cannot
- * duplicate rows; the OR is there for leagues created before membership rows
- * existed.
+ * construction (createLeague writes it), so it cannot duplicate rows; the OR is
+ * there for leagues created before membership rows existed.
  */
 export async function listUserLeagues(userId: string): Promise<UserLeagueRow[]> {
-  const rows = await db
-    .select({
-      id: leagues.id,
-      name: leagues.name,
-      sport: leagues.sport,
-      format: leagues.format,
-      slug: leagues.slug,
-      createdAt: leagues.createdAt,
-      commissionerId: leagues.commissionerId,
-      role: leagueMembers.role,
-      status: leagueMembers.status,
-      memberCount: sql<number>`(
-        select count(*)::int from league_members lm_count
-        where lm_count.league_id = leagues.id and lm_count.status = 'active'
-      )`,
-    })
-    .from(leagues)
-    .leftJoin(
-      leagueMembers,
-      and(eq(leagueMembers.leagueId, leagues.id), eq(leagueMembers.userId, userId)),
-    )
-    .orderBy(desc(leagues.createdAt))
+  const [{ data: ownedData, error: ownedError }, { data: memberData, error: memberError }] =
+    await Promise.all([
+      db
+        .from('leagues')
+        .select('id')
+        .eq('commissioner_id', userId),
+      db
+        .from('league_members')
+        .select('league_id, role')
+        .eq('user_id', userId)
+        .eq('status', 'active'),
+    ])
 
-  return rows
-    .filter(
-      (row) =>
-        row.commissionerId === userId ||
-        (row.status === 'active' && row.role !== null),
-    )
-    .map((row) => ({
-      id: row.id,
-      name: row.name,
-      sport: row.sport,
-      format: row.format,
-      slug: row.slug,
-      createdAt: row.createdAt,
-      role: row.role,
-      memberCount: row.memberCount,
-      isCommissioner: row.commissionerId === userId || row.role === 'commissioner',
-    }))
+  if (ownedError) console.error('listUserLeagues owned error:', ownedError)
+  if (memberError) console.error('listUserLeagues membership error:', memberError)
+
+  const ownedIds = new Set(
+    ((ownedData ?? []) as unknown as Pick<LeagueRow, 'id'>[]).map((l) => l.id),
+  )
+  const roleByLeagueId = new Map<string, string>(
+    ((memberData ?? []) as unknown as Pick<LeagueMemberRow, 'league_id' | 'role'>[]).map(
+      (m) => [m.league_id, m.role],
+    ),
+  )
+
+  const leagueIds = Array.from(new Set([...ownedIds, ...roleByLeagueId.keys()]))
+  if (leagueIds.length === 0) return []
+
+  const { data: leaguesData, error: leaguesError } = await db
+    .from('leagues')
+    .select('id, name, sport, format, slug, commissioner_id, created_at')
+    .in('id', leagueIds)
+    .order('created_at', { ascending: false })
+
+  if (leaguesError || !leaguesData) {
+    console.error('listUserLeagues leagues error:', leaguesError)
+    return []
+  }
+
+  const leagues = leaguesData as unknown as LeagueRow[]
+
+  // Member counts per league. One COUNT query each, in parallel, rather than
+  // pulling every membership row into memory: PostgREST caps a request at 1000
+  // rows by default, which would silently truncate a grouped count on a
+  // multi-league roster set.
+  const counts = await Promise.all(
+    leagues.map(async (league) => {
+      const { count } = await db
+        .from('league_members')
+        .select('id', { count: 'exact', head: true })
+        .eq('league_id', league.id)
+        .eq('status', 'active')
+      return [league.id, count ?? 0] as const
+    }),
+  )
+  const memberCountByLeagueId = new Map(counts)
+
+  return leagues.map((league) => {
+    const role = roleByLeagueId.get(league.id) ?? null
+    return {
+      id: league.id,
+      name: league.name,
+      sport: league.sport,
+      format: league.format,
+      slug: league.slug,
+      createdAt: new Date(league.created_at),
+      role,
+      memberCount: memberCountByLeagueId.get(league.id) ?? 0,
+      isCommissioner:
+        league.commissioner_id === userId || role === 'commissioner',
+    }
+  })
 }
 
 /**
@@ -241,18 +386,39 @@ export async function listUserLeagues(userId: string): Promise<UserLeagueRow[]> 
  * league page (e.g. /dashboard) to still link to Members/Settings.
  */
 export async function getPrimaryLeagueId(userId: string): Promise<string | null> {
-  const [first] = await db
-    .select({ id: leagues.id })
-    .from(leagues)
-    .leftJoin(
-      leagueMembers,
-      and(eq(leagueMembers.leagueId, leagues.id), eq(leagueMembers.userId, userId)),
-    )
-    .where(
-      sql`${leagues.commissionerId} = ${userId} OR ${leagueMembers.status} = 'active'`,
-    )
-    .orderBy(desc(leagues.createdAt))
+  const [{ data: ownedData }, { data: memberData }] = await Promise.all([
+    db.from('leagues').select('id').eq('commissioner_id', userId),
+    db
+      .from('league_members')
+      .select('league_id')
+      .eq('user_id', userId)
+      .eq('status', 'active'),
+  ])
+
+  const ids = new Set<string>()
+  for (const row of (ownedData ?? []) as unknown as Pick<LeagueRow, 'id'>[]) {
+    ids.add(row.id)
+  }
+  for (const row of (memberData ?? []) as unknown as Pick<LeagueMemberRow, 'league_id'>[]) {
+    ids.add(row.league_id)
+  }
+
+  if (ids.size === 0) return null
+
+  // Newest first. Done as a plain `leagues` query because ordering on an
+  // embedded resource (`order=leagues.created_at.desc`) is rejected by this
+  // PostgREST build with PGRST100.
+  const { data: newestData, error: newestError } = await db
+    .from('leagues')
+    .select('id')
+    .in('id', Array.from(ids))
+    .order('created_at', { ascending: false })
     .limit(1)
 
-  return first?.id ?? null
+  if (newestError) {
+    console.error('getPrimaryLeagueId error:', newestError)
+    return null
+  }
+
+  return ((newestData ?? []) as unknown as Pick<LeagueRow, 'id'>[])[0]?.id ?? null
 }

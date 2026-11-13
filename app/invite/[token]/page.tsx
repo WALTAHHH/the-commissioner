@@ -1,10 +1,6 @@
-import { and, eq } from 'drizzle-orm'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { db } from '@/src/lib/db'
-import { invitations } from '@/src/db/schema/invitations'
-import { leagues } from '@/src/db/schema/leagues'
-import { leagueMembers } from '@/src/db/schema/members'
 import { createClient } from '@/src/utils/supabase/server'
 import {
   INVITATION_STATE_MESSAGE,
@@ -12,6 +8,7 @@ import {
   normalizeToken,
   resolveInvitationState,
 } from '@/src/lib/invitations'
+import { loadInvitationByToken } from '@/src/lib/invitation-lookup'
 import JoinLeagueButton from './join-button'
 
 export const dynamic = 'force-dynamic'
@@ -27,6 +24,10 @@ const dateTimeFormat = new Intl.DateTimeFormat('en-US', {
  * Anonymous visitors can see whether a link is alive; joining itself needs an
  * account, so a valid link + no session redirects to /login with the invite
  * path preserved in ?next=.
+ *
+ * Reads go over PostgREST (src/lib/db.ts) with raw column names, and the old
+ * INNER JOIN on leagues is now a second lookup in loadInvitationByToken — a
+ * link whose league was deleted still renders as a dead link, as before.
  */
 export default async function InvitePage({
   params,
@@ -42,27 +43,23 @@ export default async function InvitePage({
     return <DeadLinkCard message="This invite link isn’t valid." />
   }
 
-  const [record] = await db
-    .select({
-      leagueId: invitations.leagueId,
-      leagueName: leagues.name,
-      expiresAt: invitations.expiresAt,
-      maxUses: invitations.maxUses,
-      useCount: invitations.useCount,
-      revokedAt: invitations.revokedAt,
-    })
-    .from(invitations)
-    .innerJoin(leagues, eq(leagues.id, invitations.leagueId))
-    .where(eq(invitations.token, token))
-    .limit(1)
-
-  if (!record) {
+  const lookup = await loadInvitationByToken(token)
+  if (!lookup || !lookup.league) {
     return <DeadLinkCard message="This invite link isn’t valid." />
   }
+
+  const { invitation: record, league } = lookup
+  const leagueId = league.id
+  const leagueName = league.name
 
   const state = resolveInvitationState(record)
   if (state !== 'active') {
     return <DeadLinkCard message={INVITATION_STATE_MESSAGE[state]} />
+  }
+  // resolveInvitationState already reported 'expired' for a null expiry, so this
+  // only narrows the type for the formatter below.
+  if (!record.expiresAt) {
+    return <DeadLinkCard message={INVITATION_STATE_MESSAGE.expired} />
   }
 
   const supabase = await createClient()
@@ -77,17 +74,20 @@ export default async function InvitePage({
   // Already an ACTIVE member? Then the link has nothing left to do — say so
   // instead of offering a button that silently no-ops. A soft-removed row
   // (T4 status semantics) still shows the button: redeeming re-activates it.
-  const [membership] = await db
-    .select({ id: leagueMembers.id })
-    .from(leagueMembers)
-    .where(
-      and(
-        eq(leagueMembers.leagueId, record.leagueId),
-        eq(leagueMembers.userId, session.user.id),
-        eq(leagueMembers.status, 'active')
-      )
-    )
-    .limit(1)
+  // A read failure is treated as "not a member", which only ever shows the
+  // Join button — redeemInvitation is idempotent, so that is a safe direction
+  // to be wrong in.
+  const { data: membership, error: membershipError } = await db
+    .from('league_members')
+    .select('id')
+    .eq('league_id', leagueId)
+    .eq('user_id', session.user.id)
+    .eq('status', 'active')
+    .maybeSingle()
+
+  if (membershipError) {
+    console.error('invite page membership check failed:', membershipError)
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 font-sans dark:bg-black">
@@ -96,7 +96,7 @@ export default async function InvitePage({
           League invite
         </p>
         <h1 className="mt-2 text-2xl font-bold text-black dark:text-zinc-50">
-          {record.leagueName}
+          {leagueName}
         </h1>
 
         {membership ? (
@@ -105,7 +105,7 @@ export default async function InvitePage({
               You’re already a member of this league.
             </p>
             <Link
-              href={`/leagues/${record.leagueId}`}
+              href={`/leagues/${leagueId}`}
               className="mt-6 block rounded bg-blue-500 px-4 py-2 text-center text-white hover:bg-blue-600"
             >
               Go to your league
@@ -116,7 +116,7 @@ export default async function InvitePage({
             <p className="mt-4 text-zinc-600 dark:text-zinc-400">
               You’ve been invited to join{' '}
               <span className="font-medium text-black dark:text-zinc-50">
-                {record.leagueName}
+                {leagueName}
               </span>
               . Joining adds you as a member.
             </p>
@@ -124,12 +124,12 @@ export default async function InvitePage({
               Signed in as {session.user.email ?? session.user.id}
             </p>
             <div className="mt-6">
-              <JoinLeagueButton token={token} leagueName={record.leagueName} />
+              <JoinLeagueButton token={token} leagueName={leagueName} />
             </div>
             <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
               This link expires {dateTimeFormat.format(record.expiresAt)}.
               {record.maxUses !== null
-                ? ` It can be used ${record.maxUses} time${record.maxUses === 1 ? '' : 's'} (${record.useCount} used).`
+                ? ` It can be used ${record.maxUses} time${record.maxUses === 1 ? '' : 's'} (${record.useCount ?? 0} used).`
                 : ''}
             </p>
           </>

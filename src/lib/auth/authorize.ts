@@ -1,4 +1,11 @@
-import { db } from '@/src/lib/db'
+/**
+ * Authorization service stub.
+ *
+ * Reads no data yet, so it deliberately imports no DB client: when this grows
+ * real checks it should go through the service-role Supabase client in
+ * src/lib/db.ts (PostgREST over HTTPS), not a direct Postgres connection, and
+ * every query must use raw column names (`league_id`, `user_id`).
+ */
 
 export interface AuthorizeParams {
   userId: string
