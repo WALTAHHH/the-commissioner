@@ -1,110 +1,215 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useMemo } from 'react'
+import {
+  Home,
+  Users,
+  Settings,
+  Menu,
+  X,
+  ChevronDown,
+  LogOut,
+} from 'lucide-react'
 import SignOutButton from './SignOutButton'
+import { cn } from 'cn'
 
-/** /leagues/<id>... — the dynamic segment the Members/Settings links need. */
 const LEAGUE_PATH = /^\/leagues\/([^/?#]+)/
 
 type NavItem = {
   label: string
-  /** null = no target yet (user is in no league), rendered inert. */
   href: string | null
+  icon: React.ReactNode
   active: boolean
 }
 
-/**
- * Global top navigation for the signed-in app (Phase 1 / T5).
- *
- * Rendered by AppShell above /dashboard and /leagues/*. Links are
- * Dashboard / Members / Settings; the last two are league-scoped, so the
- * league id comes from the URL when we are inside a league and from
- * `fallbackLeagueId` (the viewer's most recent league) otherwise.
- *
- * Client component only because the active/current state needs the pathname —
- * all data still comes from the server.
- */
-export default function AppNav({
-  fallbackLeagueId = null,
-}: {
+type AppNavProps = {
   fallbackLeagueId?: string | null
-}) {
-  const pathname = usePathname()
+  userEmail: string
+}
 
-  const leagueId = useMemo(() => {
+export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavProps) {
+  const pathname = usePathname()
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [leagueId, setLeagueId] = useState<string | null>(null)
+
+  useEffect(() => {
     const match = pathname.match(LEAGUE_PATH)
     const segment = match?.[1]
-    // /leagues/new is a creation form, not a league — it has no members page.
-    if (segment && segment !== 'new') return segment
-    return fallbackLeagueId
+    if (segment && segment !== 'new') {
+      setLeagueId(segment)
+    } else {
+      setLeagueId(fallbackLeagueId)
+    }
   }, [pathname, fallbackLeagueId])
 
   const inLeague = (suffix: string) =>
     leagueId !== null && pathname.startsWith(`/leagues/${leagueId}/${suffix}`)
 
-  const items: NavItem[] = [
+  const navItems: NavItem[] = [
     {
       label: 'Dashboard',
       href: '/dashboard',
+      icon: <Home className="h-5 w-5" />,
       active: pathname === '/dashboard' || pathname.startsWith('/dashboard/'),
     },
     {
       label: 'Members',
       href: leagueId ? `/leagues/${leagueId}/members` : null,
+      icon: <Users className="h-5 w-5" />,
       active: inLeague('members'),
     },
     {
       label: 'Settings',
       href: leagueId ? `/leagues/${leagueId}/settings` : null,
+      icon: <Settings className="h-5 w-5" />,
       active: inLeague('settings'),
     },
   ]
 
-  return (
-    <header className="sticky top-0 z-20 border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-      <nav
-        aria-label="Primary"
-        className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-      >
-        <Link
-          href="/dashboard"
-          className="text-base font-semibold tracking-tight text-black dark:text-zinc-50"
+  // League switcher placeholder
+  const leagueName = leagueId ? `League ${leagueId.slice(0, 4)}…` : 'Select League'
+
+  // Desktop sidebar
+  const desktopSidebar = (
+    <aside className="hidden md:flex flex-col w-64 border-r border-border bg-card h-screen sticky top-0">
+      {/* Logo / Wordmark */}
+      <div className="px-6 py-5 border-b border-border">
+        <Link href="/dashboard" className="flex items-center gap-3">
+          <span className="font-serif text-2xl font-bold tracking-tight text-foreground">
+            The Commissioner
+          </span>
+        </Link>
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 px-4 py-6 space-y-2">
+        {navItems.map((item) => (
+          <NavLink key={item.label} item={item} />
+        ))}
+      </nav>
+
+      {/* League switcher */}
+      <div className="px-4 py-4 border-t border-border">
+        <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-secondary/50 text-secondary-foreground">
+          <span className="text-sm font-medium truncate">{leagueName}</span>
+          <ChevronDown className="h-4 w-4 opacity-50" />
+        </div>
+      </div>
+
+      {/* User email + Sign out */}
+      <div className="px-4 py-4 border-t border-border mt-auto">
+        <div className="flex items-center justify-between px-3 py-2">
+          <div className="truncate text-sm text-muted-foreground">{userEmail}</div>
+          <SignOutButton variant="icon" />
+        </div>
+      </div>
+    </aside>
+  )
+
+  // Mobile header (top bar)
+  const mobileHeader = (
+    <header className="md:hidden sticky top-0 z-50 border-b border-border bg-card">
+      <div className="flex items-center justify-between px-4 py-3">
+        <button
+          onClick={() => setIsMobileMenuOpen(true)}
+          className="p-2 rounded-md hover:bg-accent"
+          aria-label="Open menu"
         >
+          <Menu className="h-6 w-6 text-foreground" />
+        </button>
+        <Link href="/dashboard" className="font-serif text-xl font-bold tracking-tight text-foreground">
           The Commissioner
         </Link>
-
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-          {items.map((item) =>
-            item.href === null ? (
-              <span
-                key={item.label}
-                aria-disabled="true"
-                title="You need to be in a league first"
-                className="cursor-default text-sm text-zinc-400 dark:text-zinc-600"
-              >
-                {item.label}
-              </span>
-            ) : (
-              <Link
-                key={item.label}
-                href={item.href}
-                aria-current={item.active ? 'page' : undefined}
-                className={
-                  item.active
-                    ? 'text-sm font-medium text-black underline underline-offset-4 dark:text-zinc-50'
-                    : 'text-sm text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50'
-                }
-              >
-                {item.label}
-              </Link>
-            ),
-          )}
-
-          <SignOutButton variant="nav" />
+        <div className="w-10"> {/* spacer for balance */}
         </div>
-      </nav>
+      </div>
     </header>
+  )
+
+  // Mobile drawer
+  const mobileDrawer = (
+    <div
+      className={cn(
+        'fixed inset-0 z-50 bg-background/80 backdrop-blur-sm md:hidden',
+        isMobileMenuOpen ? 'block' : 'hidden'
+      )}
+      onClick={() => setIsMobileMenuOpen(false)}
+    >
+      <div
+        className="absolute left-0 top-0 h-full w-72 border-r border-border bg-card shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-5 border-b border-border">
+          <span className="font-serif text-2xl font-bold tracking-tight text-foreground">
+            The Commissioner
+          </span>
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="p-2 rounded-md hover:bg-accent"
+            aria-label="Close menu"
+          >
+            <X className="h-6 w-6 text-foreground" />
+          </button>
+        </div>
+        <nav className="px-4 py-6 space-y-2">
+          {navItems.map((item) => (
+            <NavLink key={item.label} item={item} />
+          ))}
+        </nav>
+        <div className="px-4 py-4 border-t border-border">
+          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-secondary/50 text-secondary-foreground">
+            <span className="text-sm font-medium truncate">{leagueName}</span>
+            <ChevronDown className="h-4 w-4 opacity-50" />
+          </div>
+        </div>
+        <div className="px-4 py-4 border-t border-border mt-auto">
+          <div className="flex items-center justify-between px-3 py-2">
+            <div className="truncate text-sm text-muted-foreground">{userEmail}</div>
+            <SignOutButton variant="icon" />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
+  return (
+    <>
+      {desktopSidebar}
+      {mobileHeader}
+      {mobileDrawer}
+    </>
+  )
+}
+
+// Helper component for navigation links
+function NavLink({ item }: { item: NavItem }) {
+  if (item.href === null) {
+    return (
+      <span
+        aria-disabled="true"
+        title="You need to be in a league first"
+        className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted-foreground opacity-60 cursor-not-allowed"
+      >
+        {item.icon}
+        {item.label}
+      </span>
+    )
+  }
+  return (
+    <Link
+      href={item.href}
+      aria-current={item.active ? 'page' : undefined}
+      className={cn(
+        'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+        item.active
+          ? 'bg-accent text-accent-foreground font-medium'
+          : 'text-foreground hover:bg-accent/50'
+      )}
+    >
+      {item.icon}
+      {item.label}
+    </Link>
   )
 }
