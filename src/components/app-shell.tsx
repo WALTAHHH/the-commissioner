@@ -37,7 +37,7 @@ export default async function AppShell({
         fallbackLeagueId={fallbackLeagueId} 
         userEmail={userEmail}
       />
-      <div className="flex flex-1 flex-col md:ml-64">
+      <div className="flex flex-1 flex-col min-w-0">
         <main className="w-full flex-1 px-8 py-8">
           {children}
         </main>
