@@ -106,6 +106,52 @@ export type IntegrationSyncLogRow = {
   raw_snapshot?: unknown
 }
 
+export type FinancialCategoryRow = {
+  id: string
+  league_id: string
+  name: string
+  type: string
+  created_at: string
+}
+
+export type FinancialObligationRow = {
+  id: string
+  league_id: string
+  member_id: string
+  category_id: string | null
+  /** numeric(12,2) — PostgREST serialises to JSON number; normalise with Number(). */
+  amount: number
+  description: string
+  /** 'YYYY-MM-DD' (PG date), null when the obligation has no deadline. */
+  due_date: string | null
+  payment_instructions: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+export type FinancialPaymentRow = {
+  id: string
+  obligation_id: string
+  amount: number
+  recorded_by: string
+  recorded_at: string
+  notes: string | null
+  status: string
+}
+
+export type PrizeStructureRow = {
+  id: string
+  league_id: string
+  season_year: number
+  place: number
+  description: string
+  amount: number
+  created_by: string
+  created_at: string
+}
+
 
 /** The subset of `auth.users` we can reach: GoTrue admin API, not PostgREST. */
 export type UserIdentityRow = {
