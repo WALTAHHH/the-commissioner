@@ -86,6 +86,25 @@ export type RuleVersionRow = {
   changed_at: string
 }
 
+export type IntegrationConnectionRow = {
+  id: string
+  league_id: string
+  provider: string
+  external_league_id: string
+  last_synced_at: string | null
+  created_by: string
+  created_at: string
+  status: string
+}
+
+export type IntegrationSyncLogRow = {
+  id: string
+  connection_id: string
+  synced_at: string
+  status: string
+  error_message: string | null
+}
+
 
 /** The subset of `auth.users` we can reach: GoTrue admin API, not PostgREST. */
 export type UserIdentityRow = {
