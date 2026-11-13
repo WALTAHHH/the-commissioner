@@ -29,30 +29,7 @@ function isUniqueViolation(error: unknown): boolean {
   )
 }
 
-/**
- * Undo a partial league creation. Children first, then the parent, so no FK
- * violation hides the real failure. Best-effort: each delete is logged and we
- * keep going — a leaked row is a data-cleanliness bug, not a correctness one,
- * and the caller already gets an error either way.
- */
-async function rollbackLeague(leagueId: string, userId: string): Promise<void> {
-  const cleanup = [
-    db.from('league_seasons').delete().eq('league_id', leagueId),
-    db
-      .from('league_members')
-      .delete()
-      .eq('league_id', leagueId)
-      .eq('user_id', userId),
-    db.from('leagues').delete().eq('id', leagueId),
-  ]
 
-  for (const step of cleanup) {
-    const { error } = await step
-    if (error) {
-      console.error('createLeague rollback failed', leagueId, error)
-    }
-  }
-}
 
 /**
  * Create a league from the /leagues/new form.
@@ -121,61 +98,23 @@ export async function createLeague(
 
     // 3a. The league row. `commissioner_id` is the DB column name; PostgREST
     //     does not translate the camelCase Drizzle property.
-    const { data: leagueData, error: leagueError } = await db
-      .from('leagues')
-      .insert({
-        name,
-        slug,
-        sport,
-        format,
-        commissioner_id: user.id,
-      })
-      .select('id')
-      .single()
+    // 3a. Call the atomic create_league RPC.
+    const { data: leagueId, error: rpcError } = await db.rpc('create_league', {
+      p_name: name,
+      p_slug: slug,
+      p_sport: sport,
+      p_format: format,
+      p_commissioner_id: user.id,
+    })
 
-    if (leagueError || !leagueData) {
-      lastError = leagueError
+    if (rpcError) {
+      lastError = rpcError
       // Retry only when it is the unique slug colliding, not some other failure.
-      if (!isUniqueViolation(leagueError)) break
+      if (!isUniqueViolation(rpcError)) break
       continue
     }
 
-    const league = leagueData as unknown as Pick<LeagueRow, 'id'>
-
-    // 3b. The creator's commissioner membership.
-    const { error: memberError } = await db
-      .from('league_members')
-      .insert({
-        league_id: league.id,
-        user_id: user.id,
-        role: 'commissioner',
-        status: 'active',
-      })
-
-    if (memberError) {
-      lastError = memberError
-      await rollbackLeague(league.id, user.id)
-      if (!isUniqueViolation(memberError)) break
-      continue
-    }
-
-    // 3c. The opening season row, flagged current for the dashboard resolver.
-    const { error: seasonError } = await db
-      .from('league_seasons')
-      .insert({
-        league_id: league.id,
-        season_year: seasonYear,
-        is_current: true,
-      })
-
-    if (seasonError) {
-      lastError = seasonError
-      await rollbackLeague(league.id, user.id)
-      if (!isUniqueViolation(seasonError)) break
-      continue
-    }
-
-    return { leagueId: league.id }
+    return { leagueId: leagueId as string }
   }
 
   console.error('createLeague failed', lastError)
