@@ -337,6 +337,39 @@ export async function redeemInvitation(
   }
 
   try {
+    // Try the atomic accept_invitation RPC first (SECURITY DEFINER, one
+    // transaction). Falls back to the CAS path when the RPC is not yet
+    // deployed, so this PR can ship before the migration runs.
+    const rpc = await db.rpc('accept_invitation', {
+      p_token: normalized,
+      p_user_id: user.id,
+    })
+
+    if (!rpc.error) {
+      const row = (rpc.data as unknown as Array<Record<string, string>> | null)?.[0]
+      if (row) {
+        const status = row.status
+        const leagueId = row.league_id
+        const leagueName = row.league_name
+        if (status === 'invalid') {
+          return { error: 'This invite link isn’t valid.' }
+        }
+        if (status === 'already_member') {
+          return { ok: true, alreadyMember: true, leagueId, leagueName }
+        }
+        return { ok: true, leagueId, leagueName }
+      }
+      return { error: 'This invite link isn’t valid.' }
+    }
+
+    // 42883 = undefined_function: the migration hasn't run yet. Keep the old
+    // PostgREST CAS path alive until it has; anything else is a real failure.
+    if (rpc.error.code !== '42883') {
+      console.error('accept_invitation RPC failed', rpc.error)
+      return { error: 'Could not join the league. Please try again.' }
+    }
+
+    // Fallback: CAS path — one statement per HTTPS request, retried on a lost race.
     // Set once THIS request has created or re-activated a membership row, so a
     // CAS retry does not mistake our own write for a pre-existing membership
     // and skip the use it owes.
