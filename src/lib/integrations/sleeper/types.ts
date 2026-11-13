@@ -1,4 +1,14 @@
 /**
+ * Sleeper integration types.
+ *
+ * Two layers:
+ *  - `RawSleeper*`  — exactly what api.sleeper.app returns (snake_case, nullable).
+ *  - `SleeperLeague` / `SleeperMember` / `SleeperRoster` — normalized internal
+ *    shapes used by the rest of the app. The original raw payload is kept on
+ *    each object (`raw`) so sync jobs can snapshot it without a second fetch.
+ */
+
+/**
  * Raw Sleeper API response types (as returned by the API)
  */
 
@@ -47,8 +57,9 @@ export interface RawSleeperRoster {
  * Normalized internal types (used across the application)
  */
 
-export interface NormalizedLeague {
-  externalId: string; // Sleeper league ID (must be passed separately)
+export interface SleeperLeague {
+  /** Sleeper league ID. Not present on the raw league payload — passed in by the adapter. */
+  externalId: string;
   name: string;
   status: string;
   sport: string;
@@ -57,27 +68,34 @@ export interface NormalizedLeague {
   metadata: Record<string, unknown> | null;
   settings: Record<string, unknown>;
   scoringSettings: Record<string, unknown>;
-  raw: RawSleeperLeague; // keep raw data for sync log
+  /** Original API payload, kept for sync snapshots. */
+  raw: RawSleeperLeague;
 }
 
-export interface NormalizedMember {
-  externalId: string; // Sleeper user_id
+export interface SleeperMember {
+  /** Sleeper user_id */
+  externalId: string;
   displayName: string;
   avatar: string | null;
   isOwner: boolean;
   metadata: Record<string, unknown> | null;
+  /** League this member belongs to (from the raw payload). */
   leagueExternalId: string;
+  /** Original API payload, kept for sync snapshots. */
   raw: RawSleeperUser;
 }
 
-export interface NormalizedRoster {
-  externalId: number; // Sleeper roster_id
-  ownerExternalId: string; // Sleeper owner_id
+export interface SleeperRoster {
+  /** Sleeper roster_id (numeric on the API). */
+  externalId: number;
+  /** Sleeper user_id of the roster owner. */
+  ownerExternalId: string;
   leagueExternalId: string;
   starters: string[];
   players: string[];
   metadata: Record<string, unknown> | null;
   settings: Record<string, unknown>;
+  /** Original API payload, kept for sync snapshots. */
   raw: RawSleeperRoster;
 }
 
@@ -85,6 +103,16 @@ export interface NormalizedRoster {
  * Union type for normalized data
  */
 export type NormalizedSleeperData =
-  | { type: 'league'; data: NormalizedLeague }
-  | { type: 'member'; data: NormalizedMember }
-  | { type: 'roster'; data: NormalizedRoster };
+  | { type: 'league'; data: SleeperLeague }
+  | { type: 'member'; data: SleeperMember }
+  | { type: 'roster'; data: SleeperRoster };
+
+/**
+ * @deprecated Use `SleeperLeague`. Kept as an alias so existing imports keep
+ * compiling while callers migrate.
+ */
+export type NormalizedLeague = SleeperLeague;
+/** @deprecated Use `SleeperMember`. */
+export type NormalizedMember = SleeperMember;
+/** @deprecated Use `SleeperRoster`. */
+export type NormalizedRoster = SleeperRoster;
