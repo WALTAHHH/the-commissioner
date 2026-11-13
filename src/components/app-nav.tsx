@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import {
   Home,
   Users,
+  BookOpen,
   Settings,
   Menu,
   X,
@@ -59,6 +60,12 @@ export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavPro
       href: leagueId ? `/leagues/${leagueId}/members` : null,
       icon: <Users className="h-5 w-5" />,
       active: inLeague('members'),
+    },
+    {
+      label: 'Rules',
+      href: leagueId ? `/leagues/${leagueId}/rules` : null,
+      icon: <BookOpen className="h-5 w-5" />,
+      active: inLeague('rules'),
     },
     {
       label: 'Settings',
