@@ -1,33 +1,35 @@
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 
-// Supabase transaction pooler — IPv4 compatible, works on Vercel serverless
-// Uses explicit connection params to avoid URL parsing issues with
-// dotted usernames (postgres.ylqmmfzyicrcuripuejj)
-const url = process.env.DATABASE_URL
+// Lazy singleton — only connects at request time, not at build time.
+// DATABASE_URL is not available during Vercel's build phase.
+let _db: ReturnType<typeof drizzle> | null = null
 
-if (!url) {
-  throw new Error('DATABASE_URL is not set in environment variables.')
-}
+function getDb() {
+  if (_db) return _db
 
-// postgres-js has trouble parsing postgresql://user.ref@host style URLs.
-// Pass connection params explicitly to bypass URL parsing.
-let client: ReturnType<typeof postgres>
+  const url = process.env.DATABASE_URL
+  if (!url) throw new Error('DATABASE_URL is not set.')
 
-try {
   const parsed = new URL(url)
-  client = postgres({
+  console.log('[db] connecting to', parsed.hostname, 'as', parsed.username)
+
+  const client = postgres({
     host: parsed.hostname,
     port: parseInt(parsed.port || '5432'),
     database: parsed.pathname.replace(/^\//, ''),
     username: decodeURIComponent(parsed.username),
     password: decodeURIComponent(parsed.password),
     ssl: 'require',
-    max: 1, // serverless: use minimal connections
+    max: 1,
   })
-  console.log('[db] host:', parsed.hostname, 'user:', parsed.username)
-} catch (e) {
-  throw new Error(`Failed to parse DATABASE_URL: ${e}`)
+
+  _db = drizzle(client)
+  return _db
 }
 
-export const db = drizzle(client)
+export const db = new Proxy({} as ReturnType<typeof drizzle>, {
+  get(_, prop) {
+    return (getDb() as any)[prop]
+  },
+})
