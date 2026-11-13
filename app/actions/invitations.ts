@@ -1,11 +1,7 @@
 'use server'
 
-import { and, eq, isNull, sql } from 'drizzle-orm'
 import { headers } from 'next/headers'
 import { db } from '@/src/lib/db'
-import { invitations } from '@/src/db/schema/invitations'
-import { leagues } from '@/src/db/schema/leagues'
-import { leagueMembers } from '@/src/db/schema/members'
 import { createClient } from '@/src/utils/supabase/server'
 import { randomUUID } from 'node:crypto'
 import {
@@ -18,14 +14,28 @@ import {
   normalizeToken,
   resolveInvitationState,
 } from '@/src/lib/invitations'
+import {
+  loadInvitationById,
+  loadInvitationByToken,
+  loadLeagueCommissionerId,
+  type InvitationRecord,
+} from '@/src/lib/invitation-lookup'
+import type { LeagueMemberRow } from '@/src/db/rows'
 
 /**
  * Invitation links — create, revoke, redeem (Phase 1 / T3).
  *
- * These actions run on the DATABASE_URL `postgres` role (see src/lib/db.ts),
- * which bypasses RLS, so every authorisation check below is in-app:
- * only the league's commissioner may create or revoke a link. The policies in
- * src/db/rls/invitations.sql cover the anon/authenticated PostgREST path.
+ * These actions authenticate with the Supabase service-role key (see
+ * src/lib/db.ts), which bypasses RLS, so every authorisation check below is
+ * in-app: only the league's commissioner may create or revoke a link. The
+ * policies in src/db/rls/invitations.sql cover the anon/authenticated path.
+ *
+ * PostgREST runs one statement per HTTPS request — there is no transaction and
+ * no `SELECT … FOR UPDATE`. Where the Drizzle version relied on a transaction
+ * for atomicity this now uses a compare-and-swap: the UPDATE carries the value
+ * it expects to overwrite (`use_count = <the value just read>`) and returns a
+ * row only if it won, so two concurrent redemptions cannot both count. See
+ * redeemInvitation for the retry loop built on that.
  *
  * Token entropy: 122 random bits (UUIDv4). Redeem is the only anonymous-facing
  * entry point and it requires a signed-in user, so guessing a live link is not
@@ -33,6 +43,17 @@ import {
  */
 
 const TOKEN_COLLISION_ATTEMPTS = 5
+/** How many times redeem re-draws a lost use_count race before giving up. */
+const REDEEM_CAS_ATTEMPTS = 3
+const UNIQUE_VIOLATION = '23505'
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: string }).code === UNIQUE_VIOLATION
+  )
+}
 
 export interface CreateInvitationResult {
   invitationId?: string
@@ -96,16 +117,11 @@ export async function createInvitation(
   }
 
   // Ownership check: the caller must be the league's commissioner.
-  const [league] = await db
-    .select({ id: leagues.id, commissionerId: leagues.commissionerId })
-    .from(leagues)
-    .where(eq(leagues.id, leagueId))
-    .limit(1)
-
-  if (!league) {
+  const commissionerId = await loadLeagueCommissionerId(leagueId)
+  if (commissionerId === null) {
     return { error: 'League not found.' }
   }
-  if (league.commissionerId !== user.id) {
+  if (commissionerId !== user.id) {
     return { error: 'Only the league commissioner can create invite links.' }
   }
 
@@ -116,34 +132,39 @@ export async function createInvitation(
   let lastError: unknown
   for (let attempt = 0; attempt < TOKEN_COLLISION_ATTEMPTS; attempt++) {
     const token = randomUUID()
-    try {
-      const [inserted] = await db
-        .insert(invitations)
-        .values({
-          leagueId: league.id,
-          token,
-          createdBy: user.id,
-          maxUses,
-          expiresAt,
-        })
-        .returning({ id: invitations.id, expiresAt: invitations.expiresAt })
 
-      const origin = await safeOriginHeader()
-
-      return {
-        invitationId: inserted.id,
+    const { data: inserted, error: insertError } = await db
+      .from('invitations')
+      .insert({
+        league_id: leagueId,
         token,
-        url: invitationPath(token),
-        shareUrl: invitationShareUrl(token, origin),
-        expiresAt: inserted.expiresAt.toISOString(),
-      }
-    } catch (err) {
-      lastError = err
-      const isTokenConflict =
-        typeof err === 'object' &&
-        err !== null &&
-        (err as { code?: string }).code === '23505'
-      if (!isTokenConflict) break
+        created_by: user.id,
+        max_uses: maxUses,
+        // Serialises to ISO-8601, which PostgREST casts to timestamptz. Sent
+        // explicitly rather than omitted so the app decides the lifetime (the
+        // DB default of 7 days is only a backstop).
+        expires_at: expiresAt,
+      })
+      .select('id, expires_at')
+      .single()
+
+    if (insertError || !inserted) {
+      lastError = insertError
+      if (!isUniqueViolation(insertError)) break
+      continue
+    }
+
+    const row = inserted as unknown as { id: string; expires_at: string }
+    const origin = await safeOriginHeader()
+
+    return {
+      invitationId: row.id,
+      token,
+      url: invitationPath(token),
+      shareUrl: invitationShareUrl(token, origin),
+      // Read back from the DB so callers see the stored value, not the one we
+      // sent — rounding differences would otherwise be invisible.
+      expiresAt: new Date(row.expires_at).toISOString(),
     }
   }
 
@@ -154,7 +175,8 @@ export async function createInvitation(
 /**
  * Revoke an invite link by setting revoked_at. Idempotent from the visitor's
  * point of view: an already-revoked link reports alreadyRevoked, and only the
- * league's commissioner can change anything (enforced in the UPDATE's WHERE).
+ * league's commissioner can change anything (checked against the league row
+ * before the write, then pinned by the `revoked_at IS NULL` filter on it).
  */
 export async function revokeInvitation(
   invitationId: string
@@ -168,64 +190,133 @@ export async function revokeInvitation(
     return { error: 'You must be signed in to revoke invite links.' }
   }
 
-  const revokedAt = new Date()
+  const record = await loadInvitationById(invitationId)
+  if (!record) {
+    return { error: 'Invitation not found.' }
+  }
 
-  // Atomic authorisation: the EXISTS subquery mirrors the RLS policy, so a
-  // non-commissioner (or a missing row) simply updates zero rows.
-  const [updated] = await db
-    .update(invitations)
-    .set({ revokedAt })
-    .where(
-      and(
-        eq(invitations.id, invitationId),
-        isNull(invitations.revokedAt),
-        sql`EXISTS (
-               SELECT 1 FROM public.leagues l
-               WHERE l.id = invitations.league_id
-                 AND l.commissioner_id = ${user.id}
-             )`
-      )
-    )
-    .returning({ id: invitations.id, revokedAt: invitations.revokedAt })
+  const commissionerId = await loadLeagueCommissionerId(record.league_id)
+  if (commissionerId !== user.id) {
+    return { error: 'Only the league commissioner can revoke this invite link.' }
+  }
+
+  if (record.revokedAt) {
+    return { invitationId: record.id, alreadyRevoked: true }
+  }
+
+  // `.is('revoked_at', null)` makes this a one-way door: if another revoke
+  // landed between the read above and this update, zero rows match and we
+  // report alreadyRevoked rather than overwriting a different timestamp.
+  const { data: updated, error: updateError } = await db
+    .from('invitations')
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('id', invitationId)
+    .is('revoked_at', null)
+    .select('id, revoked_at')
+    .maybeSingle()
+
+  if (updateError) {
+    console.error('revokeInvitation update error:', updateError)
+    return { error: 'Could not revoke the invite link. Please try again.' }
+  }
 
   if (updated) {
+    const row = updated as unknown as { id: string; revoked_at: string }
     return {
-      invitationId: updated.id,
-      revokedAt: revokedAt.toISOString(),
+      invitationId: row.id,
+      revokedAt: new Date(row.revoked_at).toISOString(),
     }
   }
 
-  // Nothing changed — say precisely why.
-  const [existing] = await db
-    .select({
-      id: invitations.id,
-      revokedAt: invitations.revokedAt,
-      commissionerId: leagues.commissionerId,
-    })
-    .from(invitations)
-    .innerJoin(leagues, eq(leagues.id, invitations.leagueId))
-    .where(eq(invitations.id, invitationId))
-    .limit(1)
+  return { invitationId, alreadyRevoked: true }
+}
+
+type JoinOutcome = 'inserted' | 'reactivated' | 'already-active'
+
+/**
+ * Make `userId` an active member of `leagueId`, idempotently.
+ *
+ * UNIQUE(league_id, user_id) (T4 schema) is what makes this safe to call
+ * twice: a brand-new member gets a row, a soft-removed ex-member is
+ * re-activated on the same row, and a race against a concurrent join reports
+ * 'already-active'. Only league_id/user_id are sent, so the column defaults
+ * decide role ('member') and status ('active') — exactly the old
+ * `insert().values({leagueId, userId}).onConflictDoNothing()` behaviour.
+ */
+async function joinLeague(
+  leagueId: string,
+  userId: string,
+): Promise<JoinOutcome> {
+  const { data, error } = await db
+    .from('league_members')
+    .select('id, status')
+    .eq('league_id', leagueId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (error) throw error
+
+  const existing = data as unknown as Pick<LeagueMemberRow, 'id' | 'status'> | null
 
   if (!existing) {
-    return { error: 'Invitation not found.' }
+    const { error: insertError } = await db
+      .from('league_members')
+      .insert({ league_id: leagueId, user_id: userId })
+
+    if (insertError) {
+      // Someone else inserted the same (league, user) pair in the meantime.
+      if (isUniqueViolation(insertError)) return 'already-active'
+      throw insertError
+    }
+    return 'inserted'
   }
-  if (existing.commissionerId !== user.id) {
-    return { error: 'Only the league commissioner can revoke this invite link.' }
-  }
-  if (existing.revokedAt) {
-    return { invitationId: existing.id, alreadyRevoked: true }
-  }
-  return { error: 'Could not revoke the invite link. Please try again.' }
+
+  if (existing.status === 'active') return 'already-active'
+
+  const { error: updateError } = await db
+    .from('league_members')
+    .update({ status: 'active' })
+    .eq('id', existing.id)
+    .eq('league_id', leagueId)
+    .eq('user_id', userId)
+
+  if (updateError) throw updateError
+  return 'reactivated'
+}
+
+/**
+ * Burn exactly one use of an invitation, compare-and-swap style.
+ *
+ * @returns true when this call performed the increment; false when a
+ *          concurrent redemption had already moved use_count off the value we
+ *          read (zero rows matched, so double-counting is not possible).
+ */
+async function burnInvitationUse(invitation: InvitationRecord): Promise<boolean> {
+  // use_count is NOT NULL DEFAULT 0, so an equality filter is always
+  // well-formed here (a NULL would have needed `.is('use_count', null)`).
+  const expected = invitation.useCount ?? 0
+
+  const { data, error } = await db
+    .from('invitations')
+    .update({ use_count: expected + 1 })
+    .eq('id', invitation.id)
+    .eq('use_count', expected)
+    .select('id')
+    .maybeSingle()
+
+  if (error) throw error
+  return data !== null
 }
 
 /**
  * Redeem an invite link: join the league it points at.
  *
  * Validates the token end to end (exists, not revoked, not expired, under
- * max_uses), writes the league_members row, then burns one use. Runs in a
- * transaction with the invitation row locked FOR UPDATE so two concurrent
- * redemptions cannot both pass the max_uses check.
+ * max_uses), writes the league_members row, then burns one use. The old
+ * implementation wrapped that in a transaction with the invitation row locked
+ * FOR UPDATE; over PostgREST there is no such lock, so the bump is a
+ * compare-and-swap against the value just read and the sequence retries (up to
+ * REDEEM_CAS_ATTEMPTS) when it loses.
  *
  * Membership semantics (T4): a brand-new member inserts a row; a soft-removed
  * ex-member (status='removed') is re-activated on the same row — both burn a
@@ -246,18 +337,20 @@ export async function redeemInvitation(
   }
 
   try {
-    return await db.transaction(async (tx) => {
-      // Lock the invitation so the validity check and the use_count bump are
-      // one atomic step.
-      const [invitation] = await tx
-        .select()
-        .from(invitations)
-        .where(eq(invitations.token, normalized))
-        .limit(1)
-        .for('update')
+    // Set once THIS request has created or re-activated a membership row, so a
+    // CAS retry does not mistake our own write for a pre-existing membership
+    // and skip the use it owes.
+    let owesUse = false
 
-      if (!invitation) {
+    for (let attempt = 0; attempt < REDEEM_CAS_ATTEMPTS; attempt++) {
+      const lookup = await loadInvitationByToken(normalized)
+      if (!lookup) {
         return { error: 'This invite link isn’t valid.' }
+      }
+
+      const { invitation, league } = lookup
+      if (!league) {
+        return { error: 'This league no longer exists.' }
       }
 
       const state = resolveInvitationState(invitation)
@@ -265,62 +358,38 @@ export async function redeemInvitation(
         return { error: INVITATION_STATE_MESSAGE[state] }
       }
 
-      const [league] = await tx
-        .select({ id: leagues.id, name: leagues.name })
-        .from(leagues)
-        .where(eq(leagues.id, invitation.leagueId))
-        .limit(1)
-
-      if (!league) {
-        return { error: 'This league no longer exists.' }
-      }
-
-      // Join, guarded by UNIQUE(league_id, user_id) — T4 canonical schema
-      // (src/db/schema/members.ts); user_id FKs auth.users directly, so no
-      // public.users mirror dance is needed any more. DO NOTHING keeps a
-      // double click from raising; no returned row means a membership row
-      // already existed for this (league, user) pair.
-      const [member] = await tx
-        .insert(leagueMembers)
-        .values({ leagueId: league.id, userId: user.id })
-        .onConflictDoNothing({
-          target: [leagueMembers.leagueId, leagueMembers.userId],
-        })
-        .returning({ id: leagueMembers.id })
-
-      if (!member) {
-        // T4 removal is soft (status='removed'), so a re-invited ex-member
-        // re-joins by flipping the same row back to 'active' rather than
-        // inserting a duplicate. A still-active row means nothing changes and
-        // no use is burned.
-        const [existing] = await tx
-          .select({ id: leagueMembers.id, status: leagueMembers.status })
-          .from(leagueMembers)
-          .where(
-            and(
-              eq(leagueMembers.leagueId, league.id),
-              eq(leagueMembers.userId, user.id)
-            )
-          )
-          .limit(1)
-
-        if (!existing || existing.status === 'active') {
-          return { ok: true, alreadyMember: true, leagueId: league.id, leagueName: league.name }
+      if (!owesUse) {
+        const outcome = await joinLeague(league.id, user.id)
+        if (outcome === 'already-active') {
+          return {
+            ok: true,
+            alreadyMember: true,
+            leagueId: league.id,
+            leagueName: league.name,
+          }
         }
-
-        await tx
-          .update(leagueMembers)
-          .set({ status: 'active' })
-          .where(eq(leagueMembers.id, existing.id))
+        owesUse = true
       }
 
-      await tx
-        .update(invitations)
-        .set({ useCount: sql`${invitations.useCount} + 1` })
-        .where(eq(invitations.id, invitation.id))
+      if (await burnInvitationUse(invitation)) {
+        return { ok: true, leagueId: league.id, leagueName: league.name }
+      }
+      // Lost the race: re-read the invitation (it may meanwhile have hit
+      // max_uses or been revoked), re-check validity, re-try the bump.
+    }
 
-      return { ok: true, leagueId: league.id, leagueName: league.name }
-    })
+    // Joined, but never managed to record the use. The membership is the part
+    // that matters to the user, so the join stands and max_uses is under-counted
+    // by one in this vanishingly rare race. Logged, not silent.
+    console.error(
+      `redeemInvitation: could not burn a use after ${REDEEM_CAS_ATTEMPTS} attempts (max_uses may be under-counted)`,
+    )
+    const latest = await loadInvitationByToken(normalized)
+    return {
+      ok: true,
+      leagueId: latest?.league?.id,
+      leagueName: latest?.league?.name,
+    }
   } catch (err) {
     console.error('redeemInvitation failed', err)
     return { error: 'Could not join the league. Please try again.' }
