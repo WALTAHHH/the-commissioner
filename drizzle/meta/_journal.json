@@ -6,7 +6,6 @@
     {"idx": 1,"version": "7","when": 1794515470178,"tag": "0001_membership","breakpoints": true},
     {"idx": 2,"version": "7","when": 1794516696809,"tag": "0002_tired_ezekiel_stane","breakpoints": true},
     {"idx": 3,"version": "7","when": 1794594691045,"tag": "0003_chubby_skin","breakpoints": true},
-    {"idx": 4,"version": "7","when": 1794594753520,"tag": "0004_shiny_dark_phoenix","breakpoints": true},
-    {"idx": 5,"version": "7","when": 1794595354520,"tag": "0005_military_captain_america","breakpoints": true}
+    {"idx": 4,"version": "7","when": 1794594753520,"tag": "0004_integrations","breakpoints": true}
   ]
 }
