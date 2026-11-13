@@ -51,6 +51,26 @@ export function formatDate(value: Date): string {
   })
 }
 
+/**
+ * '2 hours ago' style timestamp for the activity feed; falls back to the
+ * absolute date past a week. Clock skew (a row stamped slightly in the
+ * future by the DB) renders as 'just now' rather than a negative count.
+ */
+export function formatRelativeTime(
+  value: Date,
+  now: Date = new Date(),
+): string {
+  const seconds = Math.floor((now.getTime() - value.getTime()) / 1000)
+  if (seconds < 60) return 'just now'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days} day${days === 1 ? '' : 's'} ago`
+  return formatDate(value)
+}
+
 /** 'No members' / '1 member' / '7 members'. */
 export function pluralizeCount(count: number, singular: string): string {
   if (count === 1) return `1 ${singular}`

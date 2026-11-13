@@ -3,6 +3,7 @@
 import { db } from '@/src/lib/db'
 import { createClient } from '@/src/utils/supabase/server'
 import { authorize } from '@/src/lib/auth/authorize'
+import { recordActivity } from '@/src/lib/activity'
 import type {
   RuleRow,
   RuleCategoryRow,
@@ -154,6 +155,14 @@ export async function createRule(
     // Attempt to rollback rule? We'll leave it; it's okay to have rule without version.
   }
 
+  await recordActivity(
+    leagueId,
+    user.id,
+    'rule_created',
+    `Rule created: “${title.trim()}”`,
+    { ruleId, categoryId: categoryId || null },
+  )
+
   return { ruleId }
 }
 
@@ -182,10 +191,11 @@ export async function updateRule(
     return { error: 'Body cannot be empty.' }
   }
 
-  // Fetch rule to get league_id and check authorization
+  // Fetch rule to get league_id and check authorization (title feeds the
+  // audit-event description when the caller changed only the body).
   const { data: ruleData, error: fetchError } = await db
     .from('rules')
-    .select('league_id, deleted_at')
+    .select('league_id, deleted_at, title')
     .eq('id', ruleId)
     .maybeSingle()
 
@@ -238,6 +248,16 @@ export async function updateRule(
     }
   }
 
+  const existingTitle = (ruleData as unknown as { title?: string }).title ?? ''
+  const displayTitle = (title ?? existingTitle).trim() || 'Untitled rule'
+  await recordActivity(
+    leagueId,
+    user.id,
+    'rule_updated',
+    `Rule updated: “${displayTitle}”`,
+    { ruleId, bodyChanged: body !== undefined },
+  )
+
   return { ruleId }
 }
 
@@ -257,7 +277,7 @@ export async function deleteRule(ruleId: string): Promise<DeleteRuleResult> {
 
   const { data: ruleData, error: fetchError } = await db
     .from('rules')
-    .select('league_id, deleted_at')
+    .select('league_id, deleted_at, title')
     .eq('id', ruleId)
     .maybeSingle()
 
@@ -289,6 +309,16 @@ export async function deleteRule(ruleId: string): Promise<DeleteRuleResult> {
     console.error('deleteRule error:', updateError)
     return { error: 'Failed to delete rule.' }
   }
+
+  const deletedTitle =
+    (ruleData as unknown as { title?: string }).title?.trim() || 'Untitled rule'
+  await recordActivity(
+    leagueId,
+    user.id,
+    'rule_deleted',
+    `Rule deleted: “${deletedTitle}”`,
+    { ruleId },
+  )
 
   return { ruleId }
 }

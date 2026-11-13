@@ -108,8 +108,11 @@ function metaString(value: unknown): string | null {
  *
  * Never throws: an unreachable or deleted user simply is absent from the map,
  * and callers fall back to 'Unknown member' (see src/lib/display.ts).
+ *
+ * Exported for `src/lib/activity.ts`, which resolves activity-feed actor
+ * names through the same single lookup path rather than duplicating it.
  */
-async function fetchIdentities(
+export async function fetchIdentities(
   userIds: readonly string[],
 ): Promise<Map<string, UserIdentityRow>> {
   const unique = Array.from(

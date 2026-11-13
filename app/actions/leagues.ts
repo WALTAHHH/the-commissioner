@@ -3,6 +3,7 @@
 import { db } from '@/src/lib/db'
 import { createClient } from '@/src/utils/supabase/server'
 import { slugify, randomSuffix } from '@/src/lib/slug'
+import { recordActivity } from '@/src/lib/activity'
 import {
   DEFAULT_SPORT,
   DEFAULT_FORMAT,
@@ -113,6 +114,13 @@ export async function createLeague(
       if (!isUniqueViolation(rpcError)) break
       continue
     }
+
+    // Audit trail. Best-effort by design (see src/lib/activity.ts): a failed
+    // event write must never roll back or fail a created league.
+    await recordActivity(leagueId as string, user.id, 'league_created',
+      `League “${name}” created`,
+      { slug, sport, format },
+    )
 
     return { leagueId: leagueId as string }
   }

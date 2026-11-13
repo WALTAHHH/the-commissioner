@@ -21,6 +21,7 @@ import { db } from '@/src/lib/db'
 import { createClient } from '@/src/utils/supabase/server'
 import { loadLeagueContext } from '@/src/lib/dashboard'
 import { isUuid } from '@/src/lib/invitations'
+import { recordActivity } from '@/src/lib/activity'
 import {
   getConnectionById,
   describeSleeperError,
@@ -209,6 +210,13 @@ export async function connectSleeper(
       console.error('connectSleeper reactivate error:', reactivateError)
       return { error: 'Failed to save the connection. Try again.' }
     }
+    await recordActivity(
+      leagueId,
+      user.id,
+      'integration_connected',
+      `Sleeper league ${externalId} connected`,
+      { connectionId: row.id, provider: SLEEPER_PROVIDER, externalLeagueId: externalId, reactivated: true },
+    )
     revalidateIntegrationPages(leagueId)
     return { ok: true, connectionId: row.id }
   }
@@ -234,6 +242,13 @@ export async function connectSleeper(
     return { error: 'Failed to save the connection. Try again.' }
   }
 
+  await recordActivity(
+    leagueId,
+    user.id,
+    'integration_connected',
+    `Sleeper league ${externalId} connected`,
+    { connectionId: (inserted as { id: string }).id, provider: SLEEPER_PROVIDER, externalLeagueId: externalId },
+  )
   revalidateIntegrationPages(leagueId)
   return { ok: true, connectionId: (inserted as { id: string }).id }
 }
@@ -367,6 +382,13 @@ export async function triggerSync(connectionId: string): Promise<TriggerSyncResu
   }
 
   const updated = await getConnectionById(connectionId)
+  await recordActivity(
+    leagueId,
+    user.id,
+    'integration_synced',
+    `Synced roster data from Sleeper`,
+    { connectionId, provider: SLEEPER_PROVIDER },
+  )
   revalidateIntegrationPages(leagueId)
   return { ok: true, connection: updated ?? connection }
 }

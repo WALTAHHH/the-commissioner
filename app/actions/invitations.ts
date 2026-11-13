@@ -20,6 +20,8 @@ import {
   loadLeagueCommissionerId,
   type InvitationRecord,
 } from '@/src/lib/invitation-lookup'
+import { recordActivity } from '@/src/lib/activity'
+import { displayName } from '@/src/lib/display'
 import type { LeagueMemberRow } from '@/src/db/rows'
 
 /**
@@ -157,6 +159,14 @@ export async function createInvitation(
     const row = inserted as unknown as { id: string; expires_at: string }
     const origin = await safeOriginHeader()
 
+    await recordActivity(
+      leagueId,
+      user.id,
+      'invitation_created',
+      'Invite link created',
+      { invitationId: row.id, maxUses, expiresAt: row.expires_at },
+    )
+
     return {
       invitationId: row.id,
       token,
@@ -232,6 +242,23 @@ export async function revokeInvitation(
 }
 
 type JoinOutcome = 'inserted' | 'reactivated' | 'already-active'
+
+/**
+ * Display name for the signed-in user doing a redeem — same precedence the
+ * directory uses (full_name → name → nickname → email), read from the JWT's
+ * user_metadata so no extra GoTrue round-trip is needed for the event.
+ */
+function joinerName(user: NonNullable<Awaited<ReturnType<typeof requireUser>>>): string {
+  const meta = (user.user_metadata ?? {}) as Record<string, unknown>
+  const str = (v: unknown): string | null =>
+    typeof v === 'string' && v.trim() ? v.trim() : null
+  return displayName({
+    email: user.email ?? null,
+    fullName: str(meta.full_name),
+    name: str(meta.name),
+    nickname: str(meta.nickname),
+  })
+}
 
 /**
  * Make `userId` an active member of `leagueId`, idempotently.
@@ -357,6 +384,13 @@ export async function redeemInvitation(
         if (status === 'already_member') {
           return { ok: true, alreadyMember: true, leagueId, leagueName }
         }
+        await recordActivity(
+          leagueId,
+          user.id,
+          'member_joined',
+          `${joinerName(user)} joined the league via invite link`,
+          { source: 'invitation' },
+        )
         return { ok: true, leagueId, leagueName }
       }
       return { error: 'This invite link isn’t valid.' }
@@ -402,6 +436,15 @@ export async function redeemInvitation(
           }
         }
         owesUse = true
+        // This request created/reactivated the membership: one event, logged
+        // here so a lost use_count retry cannot duplicate it.
+        await recordActivity(
+          league.id,
+          user.id,
+          'member_joined',
+          `${joinerName(user)} joined the league via invite link`,
+          { source: 'invitation', invitationId: invitation.id, reactivated: outcome === 'reactivated' },
+        )
       }
 
       if (await burnInvitationUse(invitation)) {

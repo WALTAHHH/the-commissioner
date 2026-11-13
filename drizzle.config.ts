@@ -1,7 +1,7 @@
 import type { Config } from 'drizzle-kit'
 
 export default {
-  schema: ['./src/db/schema.ts', './src/db/schema/permissions.ts', './src/db/schema/leagues.ts', './src/db/schema/members.ts', './src/db/schema/invitations.ts', './src/db/schema/rules.ts', './src/db/schema/integrations.ts'],
+  schema: ['./src/db/schema.ts', './src/db/schema/permissions.ts', './src/db/schema/leagues.ts', './src/db/schema/members.ts', './src/db/schema/invitations.ts', './src/db/schema/rules.ts', './src/db/schema/integrations.ts', './src/db/schema/activity.ts'],
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {

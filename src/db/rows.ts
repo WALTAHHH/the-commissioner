@@ -106,6 +106,18 @@ export type IntegrationSyncLogRow = {
   raw_snapshot?: unknown
 }
 
+export type ActivityEventRow = {
+  id: string
+  league_id: string
+  /** Null for system-generated events (see src/db/schema/activity.ts). */
+  actor_id: string | null
+  event_type: string
+  description: string
+  /** Free-form JSON bag emitted by recordActivity(); shape varies per type. */
+  metadata?: Record<string, unknown> | null
+  created_at: string
+}
+
 
 /** The subset of `auth.users` we can reach: GoTrue admin API, not PostgREST. */
 export type UserIdentityRow = {
