@@ -31,12 +31,12 @@ export default async function AppShell({
   const fallbackLeagueId = await getPrimaryLeagueId(session.user.id)
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50 font-sans dark:bg-black">
+    <div className="flex min-h-screen flex-col bg-background font-sans">
       <AppNav fallbackLeagueId={fallbackLeagueId} />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:py-10">
         {children}
       </main>
-      <footer className="border-t border-zinc-200 px-4 py-5 text-center text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-500">
+      <footer className="border-t border-border px-4 py-5 text-center text-xs text-muted-foreground">
         The Commissioner · Phase 1
       </footer>
     </div>

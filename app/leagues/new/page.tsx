@@ -1,6 +1,8 @@
+import Link from 'next/link'
 import { createClient } from '@/src/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import LeagueCreationForm from './league-creation-form'
+import { Sparkles } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,15 +17,29 @@ export default async function NewLeaguePage() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center py-6 sm:py-10">
-      <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-lg dark:bg-zinc-900">
-        <h1 className="mb-2 text-2xl font-bold text-black dark:text-zinc-50">
-          Create a League
-        </h1>
-        <p className="mb-6 text-sm text-zinc-600 dark:text-zinc-400">
-          Set up your fantasy league. You will be its commissioner.
+    <div className="flex min-h-screen items-center justify-center p-4 font-sans">
+      <div className="w-full max-w-xl">
+        <div className="mb-8 flex flex-col items-center">
+          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-primary">
+            <Sparkles className="h-8 w-8 text-primary-foreground" />
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
+            Create a League
+          </h1>
+          <p className="mt-2 text-center text-sm text-muted-foreground">
+            Set up your fantasy league. You will be its commissioner.
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
+          <LeagueCreationForm />
+        </div>
+
+        <p className="mt-8 text-center text-sm text-muted-foreground">
+          <Link href="/dashboard" className="hover:text-foreground">
+            ← Back to dashboard
+          </Link>
         </p>
-        <LeagueCreationForm />
       </div>
     </div>
   )

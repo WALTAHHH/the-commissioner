@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { signUp } from '@/src/lib/auth'
 import { returnToAfterAuth } from '@/src/lib/auth-return'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { Sparkles } from 'lucide-react'
 
 export default function SignUpPage() {
   const [email, setEmail] = useState('')
@@ -27,51 +29,95 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-      <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-lg dark:bg-zinc-900">
-        <h1 className="mb-6 text-2xl font-bold">Sign Up</h1>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
-              required
-            />
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 font-sans">
+      <div className="w-full max-w-md">
+        {/* Logo */}
+        <div className="mb-8 flex flex-col items-center">
+          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-primary">
+            <Sparkles className="h-8 w-8 text-primary-foreground" />
           </div>
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
-              required
-            />
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            The Commissioner
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Create your account
+          </p>
+        </div>
+
+        {/* Card */}
+        <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
+          <h2 className="mb-6 text-xl font-semibold text-foreground">
+            Sign Up
+          </h2>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label
+                htmlFor="email"
+                className="mb-2 block text-sm font-medium text-foreground"
+              >
+                Email address
+              </label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-lg border border-input bg-transparent px-4 py-3 text-foreground placeholder:text-muted-foreground/70 focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
+                placeholder="you@example.com"
+                required
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="password"
+                className="mb-2 block text-sm font-medium text-foreground"
+              >
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-lg border border-input bg-transparent px-4 py-3 text-foreground placeholder:text-muted-foreground/70 focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
+                placeholder="••••••••"
+                required
+              />
+            </div>
+            {error && (
+              <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                {error}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-lg bg-primary px-4 py-3 text-base font-medium text-primary-foreground hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50"
+            >
+              {loading ? 'Creating account…' : 'Sign Up'}
+            </button>
+          </form>
+
+          <div className="mt-8 border-t border-border pt-6">
+            <p className="text-center text-sm text-muted-foreground">
+              Already have an account?{' '}
+              <Link
+                href="/login"
+                className="font-medium text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+              >
+                Sign in
+              </Link>
+            </p>
+            <p className="mt-3 text-center text-sm text-muted-foreground">
+              <Link
+                href="/"
+                className="hover:text-foreground"
+              >
+                ← Back to home
+              </Link>
+            </p>
           </div>
-          {error && <p className="text-red-500 text-sm">{error}</p>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded bg-green-500 px-4 py-2 text-white hover:bg-green-600 disabled:opacity-50"
-          >
-            {loading ? 'Creating account...' : 'Sign Up'}
-          </button>
-        </form>
-        <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
-          Already have an account?{' '}
-          <a href="/login" className="text-blue-500 hover:underline">
-            Sign in
-          </a>
-        </p>
+        </div>
       </div>
     </div>
   )

@@ -5,7 +5,9 @@ import { usePathname } from 'next/navigation'
 import { useMemo } from 'react'
 import SignOutButton from './SignOutButton'
 
-/** /leagues/<id>... — the dynamic segment the Members/Settings links need. */
+/**
+ * /leagues/<id>… — the dynamic segment the Members/Settings links need.
+ */
 const LEAGUE_PATH = /^\/leagues\/([^/?#]+)/
 
 type NavItem = {
@@ -63,14 +65,14 @@ export default function AppNav({
   ]
 
   return (
-    <header className="sticky top-0 z-20 border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+    <header className="sticky top-0 z-20 border-b border-border bg-card">
       <nav
         aria-label="Primary"
         className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
       >
         <Link
           href="/dashboard"
-          className="text-base font-semibold tracking-tight text-black dark:text-zinc-50"
+          className="text-base font-semibold tracking-tight text-foreground"
         >
           The Commissioner
         </Link>
@@ -82,7 +84,7 @@ export default function AppNav({
                 key={item.label}
                 aria-disabled="true"
                 title="You need to be in a league first"
-                className="cursor-default text-sm text-zinc-400 dark:text-zinc-600"
+                className="cursor-default text-sm text-muted-foreground"
               >
                 {item.label}
               </span>
@@ -93,8 +95,8 @@ export default function AppNav({
                 aria-current={item.active ? 'page' : undefined}
                 className={
                   item.active
-                    ? 'text-sm font-medium text-black underline underline-offset-4 dark:text-zinc-50'
-                    : 'text-sm text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50'
+                    ? 'text-sm font-medium text-foreground underline underline-offset-4'
+                    : 'text-sm text-muted-foreground hover:text-foreground'
                 }
               >
                 {item.label}

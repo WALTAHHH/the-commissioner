@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { redeemInvitation } from '@/app/actions/invitations'
+import { CheckCircle, Loader } from 'lucide-react'
 
 type JoinedState = {
   leagueId: string
@@ -42,15 +43,25 @@ export default function JoinLeagueButton({
 
   if (joined) {
     return (
-      <div className="rounded border border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950">
-        <p className="font-medium text-green-800 dark:text-green-300">
-          {joined.alreadyMember
-            ? `You were already a member of ${joined.leagueName}.`
-            : `You’re in. Welcome to ${joined.leagueName}.`}
-        </p>
+      <div className="rounded-2xl border border-green-200 bg-green-50 p-6 dark:border-green-800 dark:bg-green-900/20">
+        <div className="mb-4 flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-950">
+            <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-green-800 dark:text-green-300">
+              {joined.alreadyMember
+                ? `You were already a member of ${joined.leagueName}.`
+                : `You're in. Welcome to ${joined.leagueName}.`}
+            </h3>
+            <p className="mt-1 text-sm text-green-700 dark:text-green-400">
+              You can now access the league dashboard.
+            </p>
+          </div>
+        </div>
         <Link
           href={`/leagues/${joined.leagueId}`}
-          className="mt-3 inline-block rounded bg-green-600 px-4 py-2 text-white hover:bg-green-700"
+          className="block w-full rounded-lg bg-green-600 px-4 py-3 text-center text-base font-medium text-green-50 hover:bg-green-700"
         >
           Go to your league
         </Link>
@@ -59,16 +70,28 @@ export default function JoinLeagueButton({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <button
         type="button"
         onClick={handleJoin}
         disabled={loading}
-        className="w-full rounded bg-blue-500 px-4 py-2 font-medium text-white hover:bg-blue-600 disabled:opacity-50"
+        className="flex w-full items-center justify-center rounded-lg bg-primary px-4 py-3 text-base font-medium text-primary-foreground hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50"
       >
-        {loading ? 'Joining…' : 'Join League'}
+        {loading ? (
+          <>
+            <Loader className="mr-3 h-5 w-5 animate-spin" />
+            Joining…
+          </>
+        ) : (
+          'Join League'
+        )}
       </button>
-      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {error && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+          <p className="font-medium text-destructive">Could not join</p>
+          <p className="mt-1 text-sm text-destructive/90">{error}</p>
+        </div>
+      )}
     </div>
   )
 }

@@ -34,7 +34,7 @@ export default function RedeemInviteForm() {
     <form onSubmit={handleSubmit} className="space-y-2">
       <label
         htmlFor="invite-link"
-        className="block text-sm font-medium text-black dark:text-zinc-50"
+        className="block text-sm font-medium text-foreground"
       >
         Have an invite link?
       </label>
@@ -49,11 +49,11 @@ export default function RedeemInviteForm() {
           value={value}
           onChange={(event) => setValue(event.target.value)}
           placeholder="Paste an invite link or code"
-          className="w-full min-w-0 flex-1 rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-black placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+          className="w-full min-w-0 flex-1 rounded border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 focus:border-ring focus:outline-none"
         />
         <button
           type="submit"
-          className="rounded bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
+          className="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
           Open invite
         </button>

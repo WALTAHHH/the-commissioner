@@ -5,6 +5,7 @@ import {
   removeLeagueMember,
   type RemoveMemberResult,
 } from '@/app/actions/members'
+import { Trash2 } from 'lucide-react'
 
 // useActionState invokes actions as (prevState, formData); the server
 // action itself only takes formData. Forward explicitly.
@@ -31,7 +32,7 @@ export default function RemoveMemberButton({
   const [state, formAction, pending] = useActionState(removeAction, undefined)
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="flex flex-col items-end gap-2">
       <form action={formAction}>
         <input type="hidden" name="leagueId" value={leagueId} />
         <input type="hidden" name="memberId" value={memberId} />
@@ -39,13 +40,14 @@ export default function RemoveMemberButton({
           type="submit"
           disabled={pending}
           aria-label={`Remove ${memberName}`}
-          className="rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+          className="inline-flex items-center rounded-lg border border-destructive/40 bg-transparent px-4 py-2 text-sm font-medium text-destructive hover:border-destructive hover:bg-destructive/10 disabled:opacity-50"
         >
+          <Trash2 className="mr-2 h-4 w-4" />
           {pending ? 'Removing…' : 'Remove'}
         </button>
       </form>
       {state?.error && (
-        <p className="max-w-[14rem] text-right text-xs text-red-500">
+        <p className="max-w-[14rem] text-right text-xs text-destructive">
           {state.error}
         </p>
       )}
