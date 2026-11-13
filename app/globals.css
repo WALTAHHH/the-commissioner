@@ -1,3 +1,4 @@
+/* Design system — UI‑1: The Commissioner palette (broadsheet‑newspaper + warmth) */
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
@@ -11,6 +12,7 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -18,59 +20,98 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-playfair-display), ui-serif, Georgia, "Times New Roman", serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 2px); /* tighter cap at 10px */
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --radius: 0.5rem; /* 8px — tight as requested */
+  --background: oklch(0.947 0.0205 86.1);  /* #F4EDDE */
+  --foreground: oklch(0.23 0.0075 85);  /* #1E1D19 */
+  --card: oklch(0.9665 0.015 86);  /* #F8F3E9 */
+  --card-foreground: oklch(0.23 0.0075 85);  /* #1E1D19 */
+  --popover: oklch(0.974 0.012 86);  /* #FAF6EE */
+  --popover-foreground: oklch(0.23 0.0075 85);  /* #1E1D19 */
+  --primary: oklch(0.54 0.13 41);  /* #AB502C */
+  --primary-foreground: oklch(0.97 0.012 86);  /* #F9F5EC */
+  --primary-hover: oklch(0.49 0.135 40);  /* #9D3F1A */
+  --secondary: oklch(0.905 0.023 85);  /* #E7DFCF */
+  --secondary-foreground: oklch(0.28 0.01 85);  /* #2B2923 */
+  --muted: oklch(0.913 0.019 86);  /* #E8E2D4 */
+  --muted-foreground: oklch(0.475 0.022 72);  /* #645A4F */
+  --accent: oklch(0.89 0.03 80);  /* #E5D9C5 */
+  --accent-foreground: oklch(0.28 0.01 85);  /* #2B2923 */
+  --destructive: oklch(0.47 0.175 22);  /* #A7182A */
+  --destructive-foreground: oklch(0.97 0.012 86);  /* #F9F5EC */
+  --success: oklch(0.5 0.105 152);  /* #2B7444 */
+  --success-foreground: oklch(0.97 0.012 86);  /* #F9F5EC */
+  --warning: oklch(0.5 0.105 70);  /* #895709 */
+  --warning-foreground: oklch(0.97 0.012 86);  /* #F9F5EC */
+  --border: oklch(0.865 0.021 85);  /* #D9D2C3 */
+  --input: oklch(0.84 0.023 85);  /* #D1CABA */
+  --ring: oklch(0.62 0.115 41);  /* #C06D4D */
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --background: oklch(0.19 0.013 75);  /* #17130D */
+  --foreground: oklch(0.93 0.014 86);  /* #ECE7DE */
+  --card: oklch(0.23 0.014 75);  /* #211C16 */
+  --card-foreground: oklch(0.93 0.014 86);  /* #ECE7DE */
+  --popover: oklch(0.25 0.014 75);  /* #26211A */
+  --popover-foreground: oklch(0.93 0.014 86);  /* #ECE7DE */
+  --primary: oklch(0.7 0.125 44);  /* #DE835B */
+  --primary-foreground: oklch(0.23 0.05 44);  /* #301408 */
+  --primary-hover: oklch(0.74 0.13 45);  /* #EE8F63 */
+  --secondary: oklch(0.29 0.016 75);  /* #302A23 */
+  --secondary-foreground: oklch(0.92 0.014 86);  /* #E9E4DA */
+  --muted: oklch(0.275 0.015 75);  /* #2C2720 */
+  --muted-foreground: oklch(0.71 0.02 80);  /* #A8A094 */
+  --accent: oklch(0.32 0.022 74);  /* #3A3126 */
+  --accent-foreground: oklch(0.93 0.014 86);  /* #ECE7DE */
+  --destructive: oklch(0.65 0.17 25);  /* #E45D58 */
+  --destructive-foreground: oklch(0.93 0.014 86);  /* #ECE7DE */
+  --success: oklch(0.72 0.115 152);  /* #69B980 */
+  --success-foreground: oklch(0.23 0.05 44);  /* #301408 */
+  --warning: oklch(0.78 0.11 75);  /* #E1AD63 */
+  --warning-foreground: oklch(0.23 0.05 44);  /* #301408 */
+  --border: oklch(0.33 0.018 74);  /* #3B342B */
+  --input: oklch(0.36 0.018 74);  /* #433C33 */
+  --ring: oklch(0.62 0.115 41);  /* #C06D4D */
 }
 
 @layer base {
   * { @apply border-border outline-ring/50; }
+  html { @apply font-sans antialiased; }
   body { @apply bg-background text-foreground; }
+
+  /* Editorial voice: display text and section headings set in the serif.
+     Utilities always win over @layer base, so any component can opt out with
+     `font-sans`; Playfair Display ships 400–900 so `font-semibold` / `font-bold`
+     on headings resolve to real weights instead of synthetic ones. */
+  h1, h2, h3, h4 {
+    @apply font-serif;
+    letter-spacing: -0.011em;
+    text-wrap: balance;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--primary) 40%, transparent);
+    color: var(--foreground);
+  }
+
+  /* Tabular figures for standings, W/L records, scores and any numeric column. */
+  table, [data-numeric="true"] { font-variant-numeric: tabular-nums; }
 }
