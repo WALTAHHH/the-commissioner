@@ -45,48 +45,46 @@ export default async function DashboardPage() {
 
       {leagues.length === 0 ? (
         // Empty state — welcoming and actionable
-        <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
-          <div className="flex flex-col items-center text-center">
-            <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900">
-              <Trophy className="h-10 w-10 text-blue-600 dark:text-blue-400" />
+        <div className="rounded-2xl border border-border bg-card p-10 shadow-sm max-w-2xl">
+          <div className="mb-8 flex items-center gap-4">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary/10">
+              <Trophy className="h-7 w-7 text-primary" />
             </div>
-            <h2 className="text-2xl font-bold text-foreground">
-              Welcome to The Commissioner
-            </h2>
-            <p className="mt-3 max-w-md text-lg text-muted-foreground">
-              Create your own fantasy league or join an existing one with an
-              invite link.
-            </p>
-            <div className="mt-8 grid w-full max-w-md gap-6 sm:grid-cols-2">
-              <div className="rounded-xl border border-border bg-card p-5">
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900">
-                  <Plus className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                </div>
-                <h3 className="mb-2 font-semibold text-foreground">
-                  Create a league
-                </h3>
-                <p className="mb-4 text-sm text-muted-foreground">
-                  Start a new league and invite friends.
-                </p>
-                <Link
-                  href="/leagues/new"
-                  className="inline-flex items-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                >
-                  Start a league
-                </Link>
+            <div>
+              <h2 className="text-2xl font-bold text-foreground">
+                Welcome to The Commissioner
+              </h2>
+              <p className="mt-1 text-muted-foreground">
+                Create your own fantasy league or join an existing one with an invite link.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 mb-8">
+            <div className="rounded-xl border border-border bg-background p-5">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                <Plus className="h-5 w-5 text-primary" />
               </div>
-              <div className="rounded-xl border border-border bg-card p-5">
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900">
-                  <Users className="h-6 w-6 text-green-600 dark:text-green-400" />
-                </div>
-                <h3 className="mb-2 font-semibold text-foreground">
-                  Join a league
-                </h3>
-                <p className="mb-4 text-sm text-muted-foreground">
-                  Have an invite link? Paste it below.
-                </p>
-                <RedeemInviteForm />
+              <h3 className="mb-1 font-semibold text-foreground">Create a league</h3>
+              <p className="mb-4 text-sm text-muted-foreground">
+                Start a new league and invite friends.
+              </p>
+              <Link
+                href="/leagues/new"
+                className="inline-flex items-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                Start a league
+              </Link>
+            </div>
+            <div className="rounded-xl border border-border bg-background p-5">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                <Users className="h-5 w-5 text-primary" />
               </div>
+              <h3 className="mb-1 font-semibold text-foreground">Join a league</h3>
+              <p className="mb-4 text-sm text-muted-foreground">
+                Have an invite link? Paste it below.
+              </p>
+              <RedeemInviteForm />
             </div>
           </div>
         </div>
