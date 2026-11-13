@@ -5,6 +5,9 @@ import { loadLeagueContext, listActiveMembers } from '@/src/lib/dashboard'
 import { displayName, prettifyLabel, formatDate, pluralizeCount } from '@/src/lib/display'
 import { isUuid } from '@/src/lib/invitations'
 import RemoveMemberButton from './remove-member-button'
+import InviteMemberButton from '../invite-member-button'
+import RoleBadge from '@/src/components/role-badge'
+import { Users, UserPlus, ArrowLeft } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,62 +48,113 @@ export default async function LeagueMembersPage({
 
   return (
     <div className="space-y-8">
-      <div className="flex items-start justify-between gap-4">
+      {/* Header */}
+      <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-semibold leading-tight text-black dark:text-zinc-50 sm:text-3xl">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
             {ctx.name}
           </h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="mt-2 text-sm text-muted-foreground">
             Member directory
           </p>
         </div>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          {pluralizeCount(members.length, 'active member')}
-        </p>
+        <div className="flex items-center gap-4">
+          <p className="text-sm text-muted-foreground">
+            {pluralizeCount(members.length, 'active member')}
+          </p>
+          {ctx.isCommissioner && (
+            <Link
+              href={`/leagues/${id}`}
+              className="inline-flex items-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              <UserPlus className="mr-2 h-4 w-4" />
+              Invite member
+            </Link>
+          )}
+        </div>
       </div>
 
+      {/* Invite box for commissioner */}
+      {ctx.isCommissioner && (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-6 dark:border-blue-900 dark:bg-blue-900/20">
+          <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-blue-900 dark:text-blue-300">
+            <UserPlus className="h-5 w-5" />
+            Invite new members
+          </h3>
+          <p className="mb-4 text-sm text-blue-800 dark:text-blue-400">
+            Create a shareable invite link (7‑day default, unlimited uses)
+          </p>
+          <InviteMemberButton leagueId={id} />
+        </div>
+      )}
+
+      {/* Members list */}
       {members.length === 0 ? (
-        <p className="rounded-lg border border-zinc-300 bg-white p-6 text-center text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
-          No active members yet.
-        </p>
+        <div className="rounded-2xl border border-border bg-card p-8 text-center">
+          <div className="mb-4 flex justify-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+              <Users className="h-8 w-8 text-muted-foreground" />
+            </div>
+          </div>
+          <h3 className="text-xl font-semibold text-foreground">
+            No members yet
+          </h3>
+          <p className="mt-2 text-muted-foreground">
+            Invite members to join this league.
+          </p>
+          {ctx.isCommissioner && (
+            <div className="mt-6">
+              <InviteMemberButton leagueId={id} />
+            </div>
+          )}
+        </div>
       ) : (
-        <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+        <ul className="space-y-4">
           {members.map((m) => (
             <li
               key={m.id}
-              className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+              className="rounded-xl border border-border bg-card p-6"
             >
-              <div className="min-w-0">
-                <p className="text-base font-medium text-black dark:text-zinc-50">
-                  {displayName(m)}
-                </p>
-                <p className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400">
-                  <span className="inline-flex items-center rounded-full border border-zinc-300 px-2 py-0.5 text-xs font-medium dark:border-zinc-700">
-                    {prettifyLabel(m.role)}
-                  </span>
-                  <span className="ml-2">
-                    Joined {formatDate(m.joinedAt)}
-                  </span>
-                </p>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                    <Users className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-medium text-foreground">
+                      {displayName(m)}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <RoleBadge role={m.role} />
+                      <span className="text-xs text-muted-foreground">
+                        Joined {formatDate(m.joinedAt)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                {ctx.isCommissioner && m.role !== 'commissioner' && (
+                  <div className="mt-4 sm:mt-0">
+                    <RemoveMemberButton
+                      leagueId={id}
+                      memberId={m.id}
+                      memberName={displayName(m)}
+                    />
+                  </div>
+                )}
               </div>
-              {ctx.isCommissioner && m.role !== 'commissioner' && (
-                <RemoveMemberButton
-                  leagueId={id}
-                  memberId={m.id}
-                  memberName={displayName(m)}
-                />
-              )}
             </li>
           ))}
         </ul>
       )}
 
-      <div className="pt-6 border-t border-zinc-200 dark:border-zinc-800">
+      {/* Back link */}
+      <div className="pt-6 border-t border-border">
         <Link
           href={`/leagues/${id}`}
-          className="text-sm font-medium text-zinc-700 hover:text-black dark:text-zinc-400 dark:hover:text-zinc-300"
+          className="inline-flex items-center text-sm font-medium text-foreground hover:text-foreground"
         >
-          ← Back to league
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to league dashboard
         </Link>
       </div>
     </div>

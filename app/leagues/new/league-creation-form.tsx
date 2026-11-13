@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createLeague } from '@/app/actions/leagues'
 import { SPORT_OPTIONS, FORMAT_OPTIONS } from '@/src/lib/league-options'
+import { Trophy, Users, Hash } from 'lucide-react'
 
 export default function LeagueCreationForm() {
   const router = useRouter()
@@ -28,12 +29,13 @@ export default function LeagueCreationForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-6">
       <div>
         <label
           htmlFor="name"
-          className="block text-sm font-medium text-black dark:text-zinc-50"
+          className="mb-2 flex items-center gap-2 text-sm font-medium text-foreground"
         >
+          <Hash className="h-4 w-4" />
           League name
         </label>
         <input
@@ -44,22 +46,23 @@ export default function LeagueCreationForm() {
           maxLength={80}
           placeholder="Sunday Bloodbath"
           required
-          className="mt-1 w-full rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
+          className="w-full rounded-lg border border-input bg-transparent px-4 py-3 text-foreground placeholder:text-muted-foreground/70 focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
         />
       </div>
 
       <div>
         <label
           htmlFor="sport"
-          className="block text-sm font-medium text-black dark:text-zinc-50"
+          className="mb-2 flex items-center gap-2 text-sm font-medium text-foreground"
         >
+          <Trophy className="h-4 w-4" />
           Sport
         </label>
         <select
           id="sport"
           name="sport"
           defaultValue="football"
-          className="mt-1 w-full rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
+          className="w-full rounded-lg border border-input bg-transparent px-4 py-3 text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
         >
           {SPORT_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -72,15 +75,16 @@ export default function LeagueCreationForm() {
       <div>
         <label
           htmlFor="format"
-          className="block text-sm font-medium text-black dark:text-zinc-50"
+          className="mb-2 flex items-center gap-2 text-sm font-medium text-foreground"
         >
+          <Users className="h-4 w-4" />
           Format
         </label>
         <select
           id="format"
           name="format"
           defaultValue="redraft"
-          className="mt-1 w-full rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
+          className="w-full rounded-lg border border-input bg-transparent px-4 py-3 text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
         >
           {FORMAT_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -90,12 +94,16 @@ export default function LeagueCreationForm() {
         </select>
       </div>
 
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && (
+        <div className="rounded-lg bg-red-50 p-4 text-sm text-red-600 dark:bg-red-900/30 dark:text-red-400">
+          {error}
+        </div>
+      )}
 
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded bg-black px-4 py-2 font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+        className="w-full rounded-lg bg-primary px-4 py-3 text-base font-medium text-primary-foreground hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50"
       >
         {loading ? 'Creating…' : 'Create League'}
       </button>

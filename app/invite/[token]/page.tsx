@@ -10,6 +10,7 @@ import {
 } from '@/src/lib/invitations'
 import { loadInvitationByToken } from '@/src/lib/invitation-lookup'
 import JoinLeagueButton from './join-button'
+import { Sparkles, Users, Calendar, XCircle } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -90,73 +91,125 @@ export default async function InvitePage({
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 font-sans dark:bg-black">
-      <main className="w-full max-w-md rounded-lg bg-white p-8 shadow-lg dark:bg-zinc-900">
-        <p className="text-sm uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-          League invite
-        </p>
-        <h1 className="mt-2 text-2xl font-bold text-black dark:text-zinc-50">
-          {leagueName}
-        </h1>
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 font-sans">
+      <div className="w-full max-w-xl">
+        {/* Logo */}
+        <div className="mb-8 flex flex-col items-center">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-xl bg-primary">
+            <Sparkles className="h-8 w-8 text-primary-foreground" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            The Commissioner
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            You're invited!
+          </p>
+        </div>
 
-        {membership ? (
-          <>
-            <p className="mt-4 text-zinc-600 dark:text-zinc-400">
-              You’re already a member of this league.
-            </p>
-            <Link
-              href={`/leagues/${leagueId}`}
-              className="mt-6 block rounded bg-blue-500 px-4 py-2 text-center text-white hover:bg-blue-600"
-            >
-              Go to your league
-            </Link>
-          </>
-        ) : (
-          <>
-            <p className="mt-4 text-zinc-600 dark:text-zinc-400">
-              You’ve been invited to join{' '}
-              <span className="font-medium text-black dark:text-zinc-50">
-                {leagueName}
-              </span>
-              . Joining adds you as a member.
-            </p>
-            <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-              Signed in as {session.user.email ?? session.user.id}
-            </p>
-            <div className="mt-6">
-              <JoinLeagueButton token={token} leagueName={leagueName} />
+        {/* Card */}
+        <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
+          <div className="mb-6 flex items-center gap-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900">
+              <Users className="h-7 w-7 text-blue-600 dark:text-blue-400" />
             </div>
-            <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
-              This link expires {dateTimeFormat.format(record.expiresAt)}.
-              {record.maxUses !== null
-                ? ` It can be used ${record.maxUses} time${record.maxUses === 1 ? '' : 's'} (${record.useCount ?? 0} used).`
-                : ''}
-            </p>
-          </>
-        )}
-      </main>
+            <div>
+              <p className="text-sm uppercase tracking-wide text-muted-foreground">
+                League invite
+              </p>
+              <h1 className="text-3xl font-bold text-foreground">
+                {leagueName}
+              </h1>
+            </div>
+          </div>
+
+          {membership ? (
+            <>
+              <div className="mb-6 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
+                <p className="font-medium text-green-800 dark:text-green-300">
+                  You're already a member of this league.
+                </p>
+                <p className="mt-1 text-sm text-green-700 dark:text-green-400">
+                  You can access the league dashboard below.
+                </p>
+              </div>
+              <Link
+                href={`/leagues/${leagueId}`}
+                className="block w-full rounded-lg bg-primary px-4 py-3 text-center text-base font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                Go to your league
+              </Link>
+            </>
+          ) : (
+            <>
+              <p className="mb-4 text-lg text-foreground">
+                You've been invited to join{' '}
+                <span className="font-bold text-foreground">
+                  {leagueName}
+                </span>
+                . Joining adds you as a member.
+              </p>
+              <p className="mb-6 flex items-center gap-2 text-sm text-muted-foreground">
+                <Calendar className="h-4 w-4" />
+                This link expires {dateTimeFormat.format(record.expiresAt)}.
+              </p>
+              <div className="mb-6">
+                <JoinLeagueButton token={token} leagueName={leagueName} />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Signed in as{' '}
+                <span className="font-medium">{session.user.email ?? session.user.id}</span>
+              </p>
+            </>
+          )}
+        </div>
+
+        {/* Back link */}
+        <div className="mt-8 text-center">
+          <Link
+            href="/"
+            className="text-sm font-medium text-muted-foreground hover:text-foreground"
+          >
+            ← Back to home
+          </Link>
+        </div>
+      </div>
     </div>
   )
 }
 
 function DeadLinkCard({ message }: { message: string }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 font-sans dark:bg-black">
-      <main className="w-full max-w-md rounded-lg bg-white p-8 shadow-lg dark:bg-zinc-900">
-        <h1 className="text-2xl font-bold text-black dark:text-zinc-50">
-          Can’t open this invite
-        </h1>
-        <p className="mt-4 text-red-600 dark:text-red-400">{message}</p>
-        <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-          Ask your commissioner for a fresh link.
-        </p>
-        <Link
-          href="/"
-          className="mt-6 block rounded bg-zinc-200 px-4 py-2 text-center text-black hover:bg-zinc-300 dark:bg-zinc-800 dark:text-zinc-50 dark:hover:bg-zinc-700"
-        >
-          Back to home
-        </Link>
-      </main>
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 font-sans">
+      <div className="w-full max-w-md">
+        <div className="mb-8 flex flex-col items-center">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-xl bg-destructive">
+            <XCircle className="h-8 w-8 text-primary-foreground" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            The Commissioner
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Invite link problem
+          </p>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
+          <h2 className="mb-4 text-xl font-semibold text-foreground">
+            Can't open this invite
+          </h2>
+          <div className="mb-6 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+            <p className="font-medium text-destructive">{message}</p>
+            <p className="mt-1 text-sm text-destructive/90">
+              Ask your commissioner for a fresh link.
+            </p>
+          </div>
+          <Link
+            href="/"
+            className="block w-full rounded-lg border border-input bg-transparent px-4 py-3 text-center text-base font-medium text-foreground hover:border-ring/50"
+          >
+            Back to home
+          </Link>
+        </div>
+      </div>
     </div>
   )
 }

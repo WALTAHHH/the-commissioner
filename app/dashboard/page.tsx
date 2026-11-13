@@ -2,8 +2,9 @@ import { createClient } from '@/src/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { listUserLeagues } from '@/src/lib/dashboard'
-import { displayName, prettifyLabel, pluralizeCount } from '@/src/lib/display'
+import { prettifyLabel, pluralizeCount } from '@/src/lib/display'
 import RedeemInviteForm from '@/src/components/redeem-invite-form'
+import { Sparkles, Plus, Users, Trophy } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,117 +24,136 @@ export default async function DashboardPage() {
 
   return (
     <div>
-      <div className="mb-8 flex items-start justify-between gap-4">
+      {/* Header */}
+      <div className="mb-10 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-semibold leading-tight text-black dark:text-zinc-50 sm:text-3xl">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
             Your leagues
           </h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Logged in as: {user.email}
+          <p className="mt-2 text-sm text-muted-foreground">
+            Logged in as: <span className="font-medium">{user.email}</span>
           </p>
         </div>
         <Link
           href="/leagues/new"
-          className="rounded bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
+          className="inline-flex items-center rounded-full bg-primary px-5 py-3 text-base font-medium text-primary-foreground hover:bg-primary/90"
         >
+          <Plus className="mr-2 h-5 w-5" />
           Create a league
         </Link>
       </div>
 
       {leagues.length === 0 ? (
-        // Empty state — same width and feel as the invite box
-        <div className="rounded-lg border border-zinc-300 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-          <h2 className="text-xl font-semibold text-black dark:text-zinc-50">
-            Welcome to The Commissioner
-          </h2>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            Create your own fantasy league or join an existing one with an
-            invite link.
-          </p>
-          <div className="mt-6 flex flex-col gap-6">
-            <div>
-              <h3 className="mb-2 text-sm font-medium text-black dark:text-zinc-50">
-                Create a league
-              </h3>
-              <Link
-                href="/leagues/new"
-                className="inline-flex items-center rounded bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
-              >
-                Start a league
-              </Link>
+        // Empty state — welcoming and actionable
+        <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
+          <div className="flex flex-col items-center text-center">
+            <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900">
+              <Trophy className="h-10 w-10 text-blue-600 dark:text-blue-400" />
             </div>
-            <div>
-              <h3 className="mb-2 text-sm font-medium text-black dark:text-zinc-50">
-                Have an invite link?
-              </h3>
-              <RedeemInviteForm />
+            <h2 className="text-2xl font-bold text-foreground">
+              Welcome to The Commissioner
+            </h2>
+            <p className="mt-3 max-w-md text-lg text-muted-foreground">
+              Create your own fantasy league or join an existing one with an
+              invite link.
+            </p>
+            <div className="mt-8 grid w-full max-w-md gap-6 sm:grid-cols-2">
+              <div className="rounded-xl border border-border bg-card p-5">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900">
+                  <Plus className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                </div>
+                <h3 className="mb-2 font-semibold text-foreground">
+                  Create a league
+                </h3>
+                <p className="mb-4 text-sm text-muted-foreground">
+                  Start a new league and invite friends.
+                </p>
+                <Link
+                  href="/leagues/new"
+                  className="inline-flex items-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                >
+                  Start a league
+                </Link>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-5">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900">
+                  <Users className="h-6 w-6 text-green-600 dark:text-green-400" />
+                </div>
+                <h3 className="mb-2 font-semibold text-foreground">
+                  Join a league
+                </h3>
+                <p className="mb-4 text-sm text-muted-foreground">
+                  Have an invite link? Paste it below.
+                </p>
+                <RedeemInviteForm />
+              </div>
             </div>
           </div>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {leagues.map((league) => (
-            <div
-              key={league.id}
-              className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <h2 className="text-lg font-semibold leading-6 text-black dark:text-zinc-50">
+        <>
+          {/* League cards */}
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {leagues.map((league) => (
+              <div
+                key={league.id}
+                className="group rounded-2xl border border-border bg-card p-6 shadow-sm transition-all hover:border-blue-300 hover:shadow-md dark:hover:border-blue-800"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <h2 className="text-xl font-semibold leading-6 text-foreground">
+                      <Link
+                        href={`/leagues/${league.id}`}
+                        className="hover:text-blue-600 dark:hover:text-blue-400"
+                      >
+                        {league.name}
+                      </Link>
+                    </h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {prettifyLabel(league.sport)} · {prettifyLabel(league.format)}
+                    </p>
+                  </div>
+                  {league.isCommissioner && (
+                    <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-800 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                      Commissioner
+                    </span>
+                  )}
+                </div>
+                <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+                  <Users className="h-4 w-4" />
+                  <span>{pluralizeCount(league.memberCount, 'member')}</span>
+                </div>
+                <div className="mt-6 flex gap-3">
                   <Link
                     href={`/leagues/${league.id}`}
-                    className="hover:text-blue-600 dark:hover:text-blue-400"
+                    className="flex-1 rounded-lg bg-primary px-4 py-2 text-center text-sm font-medium text-primary-foreground hover:bg-primary/90"
                   >
-                    {league.name}
+                    Open dashboard
                   </Link>
-                </h2>
-                {league.isCommissioner && (
-                  <span className="inline-flex items-center rounded-full border border-blue-200 px-2 py-0.5 text-xs font-medium text-blue-800 dark:border-blue-800 dark:text-blue-300">
-                    Commissioner
-                  </span>
-                )}
+                  <Link
+                    href={`/leagues/${league.id}/members`}
+                    className="flex-1 rounded-lg border border-input bg-transparent px-4 py-2 text-center text-sm font-medium text-foreground hover:border-ring/50"
+                  >
+                    Members
+                  </Link>
+                </div>
               </div>
-              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                {prettifyLabel(league.sport)} · {prettifyLabel(league.format)}
-              </p>
-              <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-500">
-                {pluralizeCount(league.memberCount, 'member')}
-              </p>
-              <div className="mt-4 flex gap-3">
-                <Link
-                  href={`/leagues/${league.id}`}
-                  className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                >
-                  Open dashboard
-                </Link>
-                <Link
-                  href={`/leagues/${league.id}/members`}
-                  className="text-sm font-medium text-zinc-700 hover:text-black dark:text-zinc-400 dark:hover:text-zinc-300"
-                >
-                  Members
-                </Link>
-                <Link
-                  href={`/leagues/${league.id}/settings`}
-                  className="text-sm font-medium text-zinc-700 hover:text-black dark:text-zinc-400 dark:hover:text-zinc-300"
-                >
-                  Settings
-                </Link>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
 
-      {leagues.length > 0 && (
-        <div className="mt-12 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h3 className="mb-3 text-lg font-medium text-black dark:text-zinc-50">
-            Join another league
-          </h3>
-          <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
-            If you have an invite link, paste it below to join the league as a
-            member.
-          </p>
-          <RedeemInviteForm />
-        </div>
+          {/* Invite box */}
+          <div className="mt-12 rounded-2xl border border-border bg-card p-8">
+            <h3 className="mb-3 flex items-center gap-2 text-xl font-semibold text-foreground">
+              <Sparkles className="h-5 w-5" />
+              Join another league
+            </h3>
+            <p className="mb-6 text-sm text-muted-foreground">
+              If you have an invite link, paste it below to join the league as a
+              member.
+            </p>
+            <RedeemInviteForm />
+          </div>
+        </>
       )}
     </div>
   )

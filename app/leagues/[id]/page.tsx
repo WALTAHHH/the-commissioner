@@ -13,6 +13,8 @@ import {
   type SeasonSource,
 } from '@/src/lib/dashboard'
 import InviteMemberButton from './invite-member-button'
+import RoleBadge from '@/src/components/role-badge'
+import { Users, Trophy, Calendar, Zap, UserCog, Settings } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -60,125 +62,188 @@ export default async function LeaguePage({ params }: { params: Promise<{ id: str
   return (
     <div className="space-y-8">
       {/* League header */}
-      <div>
-        <h1 className="text-2xl font-semibold leading-tight text-black dark:text-zinc-50 sm:text-3xl">
-          {ctx.name}
-        </h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          {prettifyLabel(ctx.sport)} · {prettifyLabel(ctx.format)}
-        </p>
+      <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+            {ctx.name}
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {prettifyLabel(ctx.sport)} · {prettifyLabel(ctx.format)}
+          </p>
+        </div>
+        {isCommissioner && (
+          <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-100 px-4 py-2 text-sm font-medium text-blue-800 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+            <UserCog className="mr-2 h-4 w-4" />
+            Commissioner
+          </span>
+        )}
       </div>
 
       {/* Stats / overview cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">Active members</p>
-          <p className="mt-1 text-2xl font-semibold text-black dark:text-zinc-50">
-            {memberCount}
-          </p>
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="rounded-2xl border border-border bg-card p-6">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900">
+              <Users className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Active members</p>
+              <p className="mt-1 text-3xl font-bold text-foreground">
+                {memberCount}
+              </p>
+            </div>
+          </div>
+          <Link
+            href={`/leagues/${id}/members`}
+            className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+          >
+            View all →
+          </Link>
         </div>
-        <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">Season</p>
-          <p className="mt-1 text-2xl font-semibold text-black dark:text-zinc-50">
-            {season.seasonYear}
-          </p>
-          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-500">
+        <div className="rounded-2xl border border-border bg-card p-6">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900">
+              <Calendar className="h-6 w-6 text-green-600 dark:text-green-400" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Season</p>
+              <p className="mt-1 text-3xl font-bold text-foreground">
+                {season.seasonYear}
+              </p>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
             {seasonLabel(season.source, season.seasonYear)}
           </p>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-6">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-900">
+              <Zap className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Quick actions</p>
+              <p className="mt-1 text-sm text-foreground">
+                Invite, manage, settings
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Link
+              href={`/leagues/${id}/members`}
+              className="flex-1 rounded-lg border border-input bg-transparent px-3 py-2 text-center text-sm font-medium text-foreground hover:border-ring/50"
+            >
+              Members
+            </Link>
+            <Link
+              href={`/leagues/${id}/settings`}
+              className="flex-1 rounded-lg border border-input bg-transparent px-3 py-2 text-center text-sm font-medium text-foreground hover:border-ring/50"
+            >
+              Settings
+            </Link>
+          </div>
         </div>
       </div>
 
       {/* Quick actions */}
-      <div className="rounded-lg border border-zinc-300 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-        <h2 className="mb-4 text-lg font-semibold text-black dark:text-zinc-50">
-          Quick actions
+      <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
+        <h2 className="mb-6 flex items-center gap-2 text-xl font-semibold text-foreground">
+          <Zap className="h-5 w-5" />
+          League management
         </h2>
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-4">
-            {isCommissioner && (
-              <div>
-                <p className="text-sm font-medium text-black dark:text-zinc-50">
-                  Invite a member
-                </p>
-                <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                  Create a shareable invite link (7‑day default, unlimited uses)
-                </p>
-                <div className="mt-2">
-                  <InviteMemberButton leagueId={id} />
-                </div>
-              </div>
-            )}
-            <div className="flex gap-3">
-              <Link
-                href={`/leagues/${id}/members`}
-                className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-black hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50 dark:hover:bg-zinc-700"
-              >
-                View all members
-              </Link>
-              <Link
-                href={`/leagues/${id}/settings`}
-                className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-black hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50 dark:hover:bg-zinc-700"
-              >
-                League settings
-              </Link>
+        <div className="space-y-6">
+          {isCommissioner && (
+            <div>
+              <h3 className="mb-2 text-lg font-medium text-foreground">
+                Invite a member
+              </h3>
+              <p className="mb-4 text-sm text-muted-foreground">
+                Create a shareable invite link (7‑day default, unlimited uses)
+              </p>
+              <InviteMemberButton leagueId={id} />
             </div>
+          )}
+          <div className="flex flex-wrap gap-4">
+            <Link
+              href={`/leagues/${id}/members`}
+              className="inline-flex items-center rounded-lg bg-primary px-5 py-3 text-base font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              <Users className="mr-2 h-5 w-5" />
+              View all members
+            </Link>
+            <Link
+              href={`/leagues/${id}/settings`}
+              className="inline-flex items-center rounded-lg border border-input bg-transparent px-5 py-3 text-base font-medium text-foreground hover:border-ring/50"
+            >
+              <Settings className="mr-2 h-5 w-5" />
+              League settings
+            </Link>
           </div>
         </div>
       </div>
 
       {/* Member preview */}
-      <div className="rounded-lg border border-zinc-300 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="mb-4 flex items-center justify-between gap-4">
-          <h2 className="text-lg font-semibold text-black dark:text-zinc-50">
-            Members
-          </h2>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+      <div className="rounded-2xl border border-border bg-card p-8">
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <h2 className="text-xl font-semibold text-foreground">Members</h2>
+          <p className="text-sm text-muted-foreground">
             {pluralizeCount(memberCount, 'member')}
           </p>
         </div>
         {members.length === 0 ? (
-          <p className="text-zinc-600 dark:text-zinc-400">
-            No active members yet.
-          </p>
+          <p className="text-muted-foreground">No active members yet.</p>
         ) : (
           <>
-            <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            <ul className="divide-y divide-border">
               {members.map((member) => (
-                <li key={member.id} className="flex items-center justify-between gap-4 py-3">
-                  <div>
-                    <p className="font-medium text-black dark:text-zinc-50">
-                      {displayName(member)}
-                    </p>
-                    <p className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400">
-                      <span className="inline-flex items-center rounded-full border border-zinc-300 px-2 py-0.5 text-xs font-medium dark:border-zinc-700">
-                        {prettifyLabel(member.role)}
-                      </span>
-                      <span className="ml-2">Joined {formatDate(member.joinedAt)}</span>
-                    </p>
+                <li key={member.id} className="py-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                        <Users className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-foreground">
+                          {displayName(member)}
+                        </p>
+                        <div className="mt-1 flex items-center gap-2">
+                          <RoleBadge role={member.role} />
+                          <span className="text-xs text-muted-foreground">
+                            Joined {formatDate(member.joinedAt)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <Link
+                      href={`/leagues/${id}/members`}
+                      className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                    >
+                      View →
+                    </Link>
                   </div>
                 </li>
               ))}
             </ul>
             {memberCount > members.length && (
-              <p className="mt-4 text-center text-sm text-zinc-600 dark:text-zinc-400">
+              <div className="mt-6 text-center">
                 <Link
                   href={`/leagues/${id}/members`}
-                  className="text-blue-600 hover:underline dark:text-blue-400"
+                  className="inline-flex items-center rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                 >
-                  View all {memberCount} {memberCount === 1 ? 'member' : 'members'} →
+                  View all {memberCount} {memberCount === 1 ? 'member' : 'members'}
                 </Link>
-              </p>
+              </div>
             )}
           </>
         )}
       </div>
 
       {/* Integrations placeholder */}
-      <div className="rounded-lg border border-zinc-300 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-        <h2 className="mb-2 text-lg font-semibold text-black dark:text-zinc-50">
+      <div className="rounded-2xl border border-border bg-card p-8">
+        <h2 className="mb-4 text-xl font-semibold text-foreground">
           Integrations
         </h2>
-        <p className="text-zinc-600 dark:text-zinc-400">
+        <p className="text-muted-foreground">
           No integrations connected — imports from third‑party fantasy platforms
           will land in a later phase.
         </p>
