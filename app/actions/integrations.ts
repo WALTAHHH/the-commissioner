@@ -31,6 +31,11 @@ import {
   SleeperNotFoundError,
 } from '@/src/lib/integrations/sleeper/adapter'
 import { syncSleeperLeague } from '@/src/lib/integrations/sleeper/sync'
+import {
+  mapSleeperFormat,
+  mapSleeperSport,
+  sleeperScoringDescriptor,
+} from '@/src/lib/integrations/sleeper/mapping'
 import type { IntegrationConnectionRow } from '@/src/db/rows'
 
 const SLEEPER_PROVIDER = 'sleeper'
@@ -55,6 +60,32 @@ export interface SimpleResult {
 
 export interface TriggerSyncResult extends SimpleResult {
   connection?: IntegrationConnectionView
+}
+
+/**
+ * Onboarding import preview: the normalized slice of a Sleeper league used to
+ * pre-fill the review step. Read-only — no DB writes, no connection row.
+ * The connection itself is saved on Step 2 confirmation via `connectSleeper`.
+ */
+export interface PreviewSleeperResult {
+  ok: boolean
+  error?: string
+  /** League name as shown on Sleeper. */
+  name?: string
+  /** Mapped to our SPORT_OPTIONS value ('football' …). */
+  sport?: string
+  /** Mapped to our FORMAT_OPTIONS value ('redraft' …). */
+  format?: string
+  /** Display label combining scoring + style, e.g. 'PPR Redraft'. */
+  formatLabel?: string
+  /** Sleeper season year, e.g. '2025'. */
+  season?: string
+  /** Number of roster spots / members on Sleeper. */
+  teamCount?: number
+  /** Members (users) on the Sleeper league. */
+  memberCount?: number
+  /** Sleeper league status, e.g. 'pre' | 'regular' | 'playoffs' | 'post'. */
+  status?: string
 }
 
 async function requireUser() {
@@ -205,6 +236,60 @@ export async function connectSleeper(
 
   revalidateIntegrationPages(leagueId)
   return { ok: true, connectionId: (inserted as { id: string }).id }
+}
+
+/**
+ * Look up a Sleeper league for the onboarding preview (Step 1 → Step 2).
+ *
+ * Read-only: hits the Sleeper API, maps the result onto our select-option
+ * values, and hands it back. Nothing is written to the DB here — the actual
+ * `integration_connections` row lands in `connectSleeper` when the review
+ * step is confirmed. Requires a signed-in user so this cannot be abused as
+ * an anonymous proxy against the Sleeper API.
+ */
+export async function previewSleeperLeague(
+  sleeperLeagueId: string,
+): Promise<PreviewSleeperResult> {
+  const user = await requireUser()
+  if (!user) return { ok: false, error: 'You must be signed in.' }
+
+  const externalId = String(sleeperLeagueId ?? '').trim()
+  if (!SLEEPER_LEAGUE_ID_PATTERN.test(externalId)) {
+    return {
+      ok: false,
+      error:
+        'Invalid Sleeper league ID — enter only the number that appears in your Sleeper league URL.',
+    }
+  }
+
+  const adapter = new SleeperAdapter()
+  let league: Awaited<ReturnType<SleeperAdapter['getLeague']>>
+  let members: Awaited<ReturnType<SleeperAdapter['getMembers']>>
+  try {
+    // The review step needs the league itself plus a head-count for the
+    // "Imported from Sleeper" badge — fetch both in parallel.
+    ;[league, members] = await Promise.all([
+      adapter.getLeague(externalId),
+      adapter.getMembers(externalId),
+    ])
+  } catch (err) {
+    return { ok: false, error: describeSleeperError(err) }
+  }
+
+  const { value: format, label: styleLabel } = mapSleeperFormat(league.settings)
+  const scoring = sleeperScoringDescriptor(league)
+
+  return {
+    ok: true,
+    name: league.name,
+    sport: mapSleeperSport(league.sport),
+    format,
+    formatLabel: `${scoring} ${styleLabel}`.trim(),
+    season: league.season,
+    teamCount: members.length,
+    memberCount: members.length,
+    status: league.status,
+  }
 }
 
 /**

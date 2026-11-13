@@ -106,7 +106,7 @@ export function parseSleeperSnapshot(raw: unknown): SleeperSnapshot | null {
   return { league: league as unknown as SleeperLeague, members, rosters }
 }
 
-function describeScoringFormat(league: SleeperLeague): string {
+export function describeScoringFormat(league: SleeperLeague): string {
   // Prefer an explicit type in league settings if Sleeper ships one.
   const settings = (league.settings ?? {}) as Record<string, unknown>
   const explicit = settings.scoring_type ?? settings.scoringFormat
@@ -117,6 +117,51 @@ function describeScoringFormat(league: SleeperLeague): string {
   const ruleCount = Object.keys(scoring).length
   if (ruleCount > 0) return `Custom scoring (${ruleCount} rules)`
   return 'Default scoring'
+}
+
+/** Sleeper sport codes ('nfl' | 'nba' | ...) → our SPORT_OPTIONS values. */
+export function mapSleeperSport(sport: string): string {
+  const map: Record<string, string> = {
+    nfl: 'football',
+    nba: 'basketball',
+    mlb: 'baseball',
+    nhl: 'hockey',
+  }
+  return map[sport.toLowerCase()] ?? 'football'
+}
+
+/**
+ * Sleeper league settings → our FORMAT_OPTIONS value plus a display label.
+ * Sleeper encodes league style in `settings.league_sub_type` / `league_type`
+ * (live values: 'yearly', 'dynamic', 'harddrop', 'salary', 'bestball').
+ */
+export function mapSleeperFormat(settings: Record<string, unknown>): { value: string; label: string } {
+  const subType = typeof settings?.league_sub_type === 'string' ? settings.league_sub_type.toLowerCase() : ''
+  const type = typeof settings?.league_type === 'string' ? settings.league_type.toLowerCase() : ''
+  if (subType === 'dynamic' || type.includes('dynasty')) return { value: 'dynasty', label: 'Dynasty' }
+  if (subType === 'harddrop' || type.includes('keeper')) return { value: 'keeper', label: 'Keeper' }
+  if (subType === 'salary' || type.includes('auction')) return { value: 'auction', label: 'Auction' }
+  if (subType.includes('bestball') || type.includes('bestball')) return { value: 'best-ball', label: 'Best Ball' }
+  // Sleeper's seasonal league ('yearly' / anything unrecognized) is a redraft.
+  return { value: 'redraft', label: 'Redraft' }
+}
+
+/**
+ * Human-readable scoring descriptor from Sleeper settings, e.g. 'PPR',
+ * 'Half-PPR', '3-QB (Dynamic Scoring)'. Falls back to describeScoringFormat.
+ */
+export function sleeperScoringDescriptor(league: SleeperLeague): string {
+  const settings = (league.settings ?? {}) as Record<string, unknown>
+  const scoringType = typeof settings.scoring_type === 'string' ? settings.scoring_type : ''
+  const labels: Record<string, string> = {
+    ppr: 'PPR',
+    '2ppr': '2×PPR',
+    half_ppr: 'Half-PPR',
+    tpr: 'TPR',
+    default: 'No PPR',
+  }
+  if (labels[scoringType]) return labels[scoringType]
+  return describeScoringFormat(league)
 }
 
 /**
