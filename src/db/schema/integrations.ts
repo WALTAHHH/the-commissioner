@@ -49,7 +49,7 @@ export const integrationSyncLog = pgTable('integration_sync_log', {
     .references(() => integrationConnections.id)
     .notNull(),
   syncedAt: timestamp('synced_at', { withTimezone: true }).defaultNow().notNull(),
-  status: text('status').notNull(), // 'success', 'failure', 'partial'
+  status: text('status').notNull(), // 'success' | 'error'
   errorMessage: text('error_message'),
   rawSnapshot: jsonb('raw_snapshot'), // optional full raw API response
 });
