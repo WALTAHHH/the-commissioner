@@ -32,17 +32,19 @@ export default async function AppShell({
   const userEmail = session.user.email ?? ''
 
   return (
-    <div className="flex min-h-screen flex-col bg-background font-sans">
+    <div className="flex min-h-screen bg-background font-sans">
       <AppNav 
         fallbackLeagueId={fallbackLeagueId} 
         userEmail={userEmail}
       />
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:py-10">
-        {children}
-      </main>
-      <footer className="border-t border-border px-4 py-5 text-center text-xs text-muted-foreground">
-        The Commissioner · Phase 1
-      </footer>
+      <div className="flex flex-1 flex-col md:ml-64">
+        <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-8">
+          {children}
+        </main>
+        <footer className="border-t border-border px-4 py-5 text-center text-xs text-muted-foreground">
+          The Commissioner · Phase 1
+        </footer>
+      </div>
     </div>
   )
 }
