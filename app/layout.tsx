@@ -21,7 +21,10 @@ const playfairDisplay = Playfair_Display({
 
 export const metadata: Metadata = {
   title: "The Commissioner",
-  description: "Fantasy sports platform scaffold — Phase 1",
+  description: "The command center for private fantasy leagues.",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
