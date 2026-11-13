@@ -38,7 +38,7 @@ export default async function AppShell({
         userEmail={userEmail}
       />
       <div className="flex flex-1 flex-col md:ml-64">
-        <main className="w-full flex-1 px-6 py-8 sm:px-10">
+        <main className="mr-auto w-full max-w-5xl flex-1 px-6 py-8 sm:px-10">
           {children}
         </main>
         <footer className="border-t border-border px-4 py-5 text-center text-xs text-muted-foreground">
