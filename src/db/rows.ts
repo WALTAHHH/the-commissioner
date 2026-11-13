@@ -103,6 +103,7 @@ export type IntegrationSyncLogRow = {
   synced_at: string
   status: string
   error_message: string | null
+  raw_snapshot?: unknown
 }
 
 

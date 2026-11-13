@@ -15,6 +15,8 @@ import {
 import InviteMemberButton from './invite-member-button'
 import RoleBadge from '@/src/components/role-badge'
 import { Users, Trophy, Calendar, Zap, UserCog, Settings } from 'lucide-react'
+import SleeperSyncedCard from './components/integrations-section'
+import { getSleeperDisplayData } from '@/src/lib/integrations/sleeper/mapping'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,6 +60,10 @@ export default async function LeaguePage({ params }: { params: Promise<{ id: str
   }
 
   const isCommissioner = ctx.isCommissioner
+  // Optional/additive: null renders the plain placeholder (graceful degrade).
+  // Dashboard only shows league-level summary; member matching runs on the
+  // members page with the full roster, so no match list here.
+  const sleeper = await getSleeperDisplayData(id)
 
   return (
     <div className="space-y-8">
@@ -238,16 +244,20 @@ export default async function LeaguePage({ params }: { params: Promise<{ id: str
         )}
       </div>
 
-      {/* Integrations placeholder */}
-      <div className="rounded-2xl border border-border bg-card p-8">
-        <h2 className="mb-4 text-xl font-semibold text-foreground">
-          Integrations
-        </h2>
-        <p className="text-muted-foreground">
-          No integrations connected — imports from third‑party fantasy platforms
-          will land in a later phase.
-        </p>
-      </div>
+      {/* Integrations — Sleeper sync card only when connected + synced */}
+      {sleeper ? (
+        <SleeperSyncedCard data={sleeper} />
+      ) : (
+        <div className="rounded-2xl border border-border bg-card p-8">
+          <h2 className="mb-4 text-xl font-semibold text-foreground">
+            Integrations
+          </h2>
+          <p className="text-muted-foreground">
+            No integrations connected — imports from third‑party fantasy platforms
+            will land in a later phase.
+          </p>
+        </div>
+      )}
     </div>
   )
 }
