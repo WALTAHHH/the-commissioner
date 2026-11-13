@@ -2,20 +2,26 @@ import type {
   RawSleeperLeague,
   RawSleeperUser,
   RawSleeperRoster,
-  NormalizedLeague,
-  NormalizedMember,
-  NormalizedRoster,
+  SleeperLeague,
+  SleeperMember,
+  SleeperRoster,
 } from './types';
 
 /**
- * Convert raw Sleeper league response to normalized league.
- * @param externalId The Sleeper league ID (not included in raw object)
- * @param raw Raw league object from API
+ * Maps raw Sleeper API payloads to the normalized internal types.
+ * Pure functions — no fetching, no DB.
+ */
+
+/**
+ * Convert raw Sleeper league response to a normalized league.
+ * @param externalId The Sleeper league ID (the raw league payload does not
+ *   include its own ID, so it must be passed in).
+ * @param raw Raw league object from the API.
  */
 export function normalizeLeague(
   externalId: string,
   raw: RawSleeperLeague
-): NormalizedLeague {
+): SleeperLeague {
   return {
     externalId,
     name: raw.name,
@@ -31,9 +37,9 @@ export function normalizeLeague(
 }
 
 /**
- * Convert raw Sleeper user (member) response to normalized member.
+ * Convert a raw Sleeper user (member) response to a normalized member.
  */
-export function normalizeMember(raw: RawSleeperUser): NormalizedMember {
+export function normalizeMember(raw: RawSleeperUser): SleeperMember {
   return {
     externalId: raw.user_id,
     displayName: raw.display_name,
@@ -46,9 +52,9 @@ export function normalizeMember(raw: RawSleeperUser): NormalizedMember {
 }
 
 /**
- * Convert raw Sleeper roster response to normalized roster.
+ * Convert a raw Sleeper roster response to a normalized roster.
  */
-export function normalizeRoster(raw: RawSleeperRoster): NormalizedRoster {
+export function normalizeRoster(raw: RawSleeperRoster): SleeperRoster {
   return {
     externalId: raw.roster_id,
     ownerExternalId: raw.owner_id,
@@ -66,14 +72,14 @@ export function normalizeRoster(raw: RawSleeperRoster): NormalizedRoster {
  */
 export function normalizeLeagues(
   data: Array<{ externalId: string; raw: RawSleeperLeague }>
-): NormalizedLeague[] {
+): SleeperLeague[] {
   return data.map(({ externalId, raw }) => normalizeLeague(externalId, raw));
 }
 
-export function normalizeMembers(raws: RawSleeperUser[]): NormalizedMember[] {
+export function normalizeMembers(raws: RawSleeperUser[]): SleeperMember[] {
   return raws.map(normalizeMember);
 }
 
-export function normalizeRosters(raws: RawSleeperRoster[]): NormalizedRoster[] {
+export function normalizeRosters(raws: RawSleeperRoster[]): SleeperRoster[] {
   return raws.map(normalizeRoster);
 }
