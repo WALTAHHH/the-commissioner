@@ -7,19 +7,21 @@ import { loadCurrentSeasonYear, loadPrizes } from '@/src/lib/finances'
 import { isUuid } from '@/src/lib/invitations'
 import FinancesNav from '../finances-nav'
 import { PrizeGroup } from './prize-card'
+import PrizeTabs from './prize-tabs'
 import { buttonVariants } from '@/components/ui/button'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * Prizes (Finances-2): everything the commissioner defines for a season —
+ * Prizes (Prizes-2): everything the commissioner defines for a season —
  * money payouts and recognition awards, at season end or in a given week —
- * and who has won each one so far.
+ * and who has won each one so far. Commissioner defines/awards/deletes;
+ * every member can view. Shown as two tabs — Season prizes / Weekly prizes —
+ * each tab grouping its board into payouts and recognitions.
  *
- * Commissioner defines and awards; every member can view (prizes are public
- * league information). Scoped to the current season. The read goes through
- * `loadPrizes` (gated by `loadLeagueContext`), not the `authorize()`-based
- * actions, because the read path in this app trusts league membership.
+ * Scoped to the current season. The read goes through `loadPrizes`
+ * (gated by `loadLeagueContext`), not the `authorize()`-based actions,
+ * because the read path in this app trusts league membership.
  */
 export default async function LeaguePrizesPage({
   params,
@@ -50,6 +52,43 @@ export default async function LeaguePrizesPage({
 
   const base = `/leagues/${id}/finances/prizes`
 
+  // The Add button is ALWAYS shown to the commissioner — even when no prizes
+  // exist yet. (The old page hid it, leaving "Add 1st place to get started"
+  // with no way to actually do it.) Header + empty state share one element.
+  const addPrizeLink = (
+    <Link
+      href={`${base}/new`}
+      scroll={false}
+      className={buttonVariants({ size: 'lg' })}
+    >
+      <Plus className="h-4 w-4" />
+      Add prize
+    </Link>
+  )
+
+  const pane = (
+    heading: string,
+    payouts: typeof sections.season.payouts,
+    recognitions: typeof sections.season.recognitions,
+  ) => (
+    <>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <PrizeGroup
+          title={`${heading} · payouts`}
+          prizes={payouts}
+          leagueId={id}
+          canEdit={ctx.isCommissioner}
+        />
+        <PrizeGroup
+          title={`${heading} · recognitions`}
+          prizes={recognitions}
+          leagueId={id}
+          canEdit={ctx.isCommissioner}
+        />
+      </div>
+    </>
+  )
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -62,19 +101,7 @@ export default async function LeaguePrizesPage({
             and weekly
           </p>
         </div>
-        {/* The Add button is ALWAYS shown to the commissioner — even when no
-            prizes exist yet. (The old page hid it, leaving "Add 1st place to
-            get started" with no way to actually do it.) */}
-        {ctx.isCommissioner && (
-          <Link
-            href={`${base}/new`}
-            scroll={false}
-            className={buttonVariants({ size: 'lg' })}
-          >
-            <Plus className="h-4 w-4" />
-            Add prize
-          </Link>
-        )}
+        {ctx.isCommissioner && addPrizeLink}
       </div>
 
       <FinancesNav leagueId={id} active="prizes" />
@@ -94,56 +121,19 @@ export default async function LeaguePrizesPage({
             aria-hidden="true"
           />
           <p className="mt-3 text-sm text-muted-foreground">
-            No prizes defined for {seasonYear} yet.{' '}
             {ctx.isCommissioner
-              ? 'Add one to get started — a payout for the winner, or a recognition award like the Golden Toilet.'
-              : 'Check back soon.'}
+              ? 'No prizes defined yet. Add your first prize.'
+              : 'No prizes defined yet. Check back soon.'}
           </p>
+          {ctx.isCommissioner && (
+            <div className="mt-5 flex justify-center">{addPrizeLink}</div>
+          )}
         </div>
       ) : (
-        <div className="space-y-8">
-          {/* Season prizes */}
-          <section className="space-y-4">
-            <h2 className="text-lg font-semibold text-foreground">
-              Season prizes
-            </h2>
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <PrizeGroup
-                title="Season payouts"
-                prizes={sections.season.payouts}
-                leagueId={id}
-                canEdit={ctx.isCommissioner}
-              />
-              <PrizeGroup
-                title="Season recognitions"
-                prizes={sections.season.recognitions}
-                leagueId={id}
-                canEdit={ctx.isCommissioner}
-              />
-            </div>
-          </section>
-
-          {/* Weekly prizes */}
-          <section className="space-y-4">
-            <h2 className="text-lg font-semibold text-foreground">
-              Weekly prizes
-            </h2>
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <PrizeGroup
-                title="Weekly payouts"
-                prizes={sections.weekly.payouts}
-                leagueId={id}
-                canEdit={ctx.isCommissioner}
-              />
-              <PrizeGroup
-                title="Weekly recognitions"
-                prizes={sections.weekly.recognitions}
-                leagueId={id}
-                canEdit={ctx.isCommissioner}
-              />
-            </div>
-          </section>
-        </div>
+        <PrizeTabs
+          seasonPane={pane('Season', sections.season.payouts, sections.season.recognitions)}
+          weeklyPane={pane('Weekly', sections.weekly.payouts, sections.weekly.recognitions)}
+        />
       )}
     </div>
   )
