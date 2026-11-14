@@ -6,6 +6,10 @@ import { returnToAfterAuth } from '@/src/lib/auth-return'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Sparkles } from 'lucide-react'
+import { Field } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { FormMessage } from '@/components/ui/form-message'
+import { SubmitButton } from '@/components/ui/submit-button'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -45,57 +49,39 @@ export default function LoginPage() {
         </div>
 
         {/* Card */}
-        <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-lg sm:p-8">
           <h2 className="mb-6 text-xl font-semibold text-foreground">
             Sign In
           </h2>
           <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label
-                htmlFor="email"
-                className="mb-2 block text-sm font-medium text-foreground"
-              >
-                Email address
-              </label>
-              <input
+            <Field label="Email address" htmlFor="email">
+              <Input
                 id="email"
                 type="email"
+                autoComplete="email"
                 value={email}
+                disabled={loading}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-lg border border-input bg-transparent px-4 py-3 text-foreground placeholder:text-muted-foreground/70 focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
                 placeholder="you@example.com"
                 required
               />
-            </div>
-            <div>
-              <label
-                htmlFor="password"
-                className="mb-2 block text-sm font-medium text-foreground"
-              >
-                Password
-              </label>
-              <input
+            </Field>
+            <Field label="Password" htmlFor="password">
+              <Input
                 id="password"
                 type="password"
+                autoComplete="current-password"
                 value={password}
+                disabled={loading}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-lg border border-input bg-transparent px-4 py-3 text-foreground placeholder:text-muted-foreground/70 focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
                 placeholder="••••••••"
                 required
               />
-            </div>
-            {error && (
-              <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-                {error}
-              </p>
-            )}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-lg bg-primary px-4 py-3 text-base font-medium text-primary-foreground hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50"
-            >
-              {loading ? 'Signing in…' : 'Sign In'}
-            </button>
+            </Field>
+            {error && <FormMessage>{error}</FormMessage>}
+            <SubmitButton loading={loading} size="lg" className="w-full">
+              Sign In
+            </SubmitButton>
           </form>
 
           <div className="mt-8 border-t border-border pt-6">
@@ -103,16 +89,13 @@ export default function LoginPage() {
               Don't have an account?{' '}
               <Link
                 href="/signup"
-                className="font-medium text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                className="font-medium text-primary underline-offset-4 hover:underline"
               >
                 Sign up
               </Link>
             </p>
             <p className="mt-3 text-center text-sm text-muted-foreground">
-              <Link
-                href="/"
-                className="hover:text-foreground"
-              >
+              <Link href="/" className="hover:text-foreground">
                 ← Back to home
               </Link>
             </p>

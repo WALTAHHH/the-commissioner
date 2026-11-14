@@ -78,7 +78,7 @@ export default async function LeaguePage({ params }: { params: Promise<{ id: str
           </p>
         </div>
         {isCommissioner && (
-          <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-100 px-4 py-2 text-sm font-medium text-blue-800 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+          <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-medium text-primary dark:border-primary/30 dark:bg-primary/20 dark:text-primary/90">
             <UserCog className="mr-2 h-4 w-4" />
             Commissioner
           </span>
@@ -89,8 +89,8 @@ export default async function LeaguePage({ params }: { params: Promise<{ id: str
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-2xl border border-border bg-card p-6">
           <div className="mb-4 flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900">
-              <Users className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 dark:bg-primary/20">
+              <Users className="h-6 w-6 text-primary dark:text-primary/80" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Active members</p>
@@ -101,15 +101,15 @@ export default async function LeaguePage({ params }: { params: Promise<{ id: str
           </div>
           <Link
             href={`/leagues/${id}/members`}
-            className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+            className="text-sm font-medium text-primary hover:text-primary/80 dark:text-primary dark:hover:text-primary/60"
           >
             View all →
           </Link>
         </div>
         <div className="rounded-2xl border border-border bg-card p-6">
           <div className="mb-4 flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900">
-              <Calendar className="h-6 w-6 text-green-600 dark:text-green-400" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-success/10 dark:bg-success/20">
+              <Calendar className="h-6 w-6 text-success dark:text-success/80" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Season</p>
@@ -124,8 +124,8 @@ export default async function LeaguePage({ params }: { params: Promise<{ id: str
         </div>
         <div className="rounded-2xl border border-border bg-card p-6">
           <div className="mb-4 flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-900">
-              <Zap className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 dark:bg-accent/20">
+              <Zap className="h-6 w-6 text-accent dark:text-accent/80" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Quick actions</p>
@@ -222,7 +222,7 @@ export default async function LeaguePage({ params }: { params: Promise<{ id: str
                     </div>
                     <Link
                       href={`/leagues/${id}/members`}
-                      className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                      className="text-sm font-medium text-primary hover:text-primary/80 dark:text-primary dark:hover:text-primary/60"
                     >
                       View →
                     </Link>

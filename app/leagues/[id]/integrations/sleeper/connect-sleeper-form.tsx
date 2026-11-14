@@ -3,14 +3,18 @@
 import { useState } from 'react'
 import { connectSleeper } from '@/app/actions/integrations'
 import { Hash } from 'lucide-react'
+import { Field } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { FormMessage } from '@/components/ui/form-message'
+import { SubmitButton } from '@/components/ui/submit-button'
 
 /**
  * Sleeper connect form (Sleeper-2). One field: the numeric league ID from
  * the Sleeper league URL. The server action verifies the league exists via
  * the Sleeper API before saving, so every failure — malformed ID, unknown
- * league, already connected, unreachable API — comes back here as a plain
- * message under the input. On success the action revalidates this route and
- * the page repaints as the connected view; no client-side navigation needed.
+ * league, already connected, unreachable API — comes back here in the
+ * field's error slot. On success the action revalidates this route and the
+ * page repaints as the connected view; no client-side navigation needed.
  */
 export default function ConnectSleeperForm({ leagueId }: { leagueId: string }) {
   const [error, setError] = useState('')
@@ -33,20 +37,23 @@ export default function ConnectSleeperForm({ leagueId }: { leagueId: string }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-5">
       <h2 className="text-lg font-semibold text-foreground">
         Connect a Sleeper league
       </h2>
 
-      <div>
-        <label
-          htmlFor="sleeperLeagueId"
-          className="mb-2 flex items-center gap-2 text-sm font-medium text-foreground"
-        >
-          <Hash className="h-4 w-4" />
-          Sleeper League ID
-        </label>
-        <input
+      <Field
+        label={
+          <>
+            <Hash className="mr-1.5 inline h-4 w-4 align-[-2px]" aria-hidden="true" />
+            Sleeper League ID
+          </>
+        }
+        htmlFor="sleeperLeagueId"
+        hint={`Find this in your Sleeper league URL: sleeper.com/leagues/{league_id}`}
+        error={error || null}
+      >
+        <Input
           id="sleeperLeagueId"
           name="sleeperLeagueId"
           type="text"
@@ -57,29 +64,14 @@ export default function ConnectSleeperForm({ leagueId }: { leagueId: string }) {
           placeholder="289646328504385536"
           required
           disabled={loading}
-          className="w-full rounded-lg border border-input bg-transparent px-4 py-3 font-mono text-sm text-foreground placeholder:text-muted-foreground/70 focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:opacity-50"
+          className="max-w-sm font-mono"
+          aria-invalid={error ? true : undefined}
         />
-        <p className="mt-2 text-xs text-muted-foreground">
-          Find this in your Sleeper league URL: sleeper.com/leagues/{'{league_id}'}
-        </p>
-      </div>
+      </Field>
 
-      {error && (
-        <p
-          role="alert"
-          className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
-        >
-          {error}
-        </p>
-      )}
-
-      <button
-        type="submit"
-        disabled={loading}
-        className="inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-50 sm:w-auto"
-      >
-        {loading ? 'Checking with Sleeper…' : 'Connect league'}
-      </button>
+      <SubmitButton loading={loading} className="w-full sm:w-auto">
+        Connect league
+      </SubmitButton>
     </form>
   )
 }

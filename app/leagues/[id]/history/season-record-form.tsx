@@ -3,6 +3,12 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createSeasonRecord } from '@/app/actions/history'
+import { Field } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { FormMessage } from '@/components/ui/form-message'
+import { SubmitButton } from '@/components/ui/submit-button'
 
 const SEASON_YEAR_MIN = 2000
 const SEASON_YEAR_MAX = 2100
@@ -28,7 +34,18 @@ export type SeasonRecordInitial = {
  * least one of champion member / champion team name, year in range, notes
  * capped. Member selects are only ever fed this league's active members,
  * but the action re-verifies membership server-side regardless.
+ *
+ * Field-specific failures render in that field's error slot; the
+ * champion-member-or-team-name check spans two controls, so it (and any
+ * server failure) renders as a banner.
  */
+type FieldKey = 'seasonYear' | 'championTeamName' | 'notes'
+
+interface FormError {
+  message: string
+  field?: FieldKey
+}
+
 export default function SeasonRecordForm({
   leagueId,
   members,
@@ -48,26 +65,32 @@ export default function SeasonRecordForm({
   const [championTeamName, setChampionTeamName] = useState(initial?.championTeamName ?? '')
   const [runnerUpMemberId, setRunnerUpMemberId] = useState(initial?.runnerUpMemberId ?? '')
   const [notes, setNotes] = useState(initial?.notes ?? '')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<FormError | null>(null)
   const [pending, startTransition] = useTransition()
+
+  const fieldError = (key: FieldKey) =>
+    error?.field === key ? error.message : null
 
   function submit() {
     setError(null)
     const year = Number(seasonYear)
     if (!Number.isInteger(year) || year < SEASON_YEAR_MIN || year > SEASON_YEAR_MAX) {
-      setError(`Season year must be a whole number between ${SEASON_YEAR_MIN} and ${SEASON_YEAR_MAX}.`)
+      setError({
+        message: `Season year must be a whole number between ${SEASON_YEAR_MIN} and ${SEASON_YEAR_MAX}.`,
+        field: 'seasonYear',
+      })
       return
     }
     if (!championMemberId && !championTeamName.trim()) {
-      setError('Pick a champion member or type a champion team name.')
+      setError({ message: 'Pick a champion member or type a champion team name.' })
       return
     }
     if (championTeamName.trim().length > MAX_TEAM_NAME) {
-      setError(`Champion team name must be at most ${MAX_TEAM_NAME} characters.`)
+      setError({ message: `Champion team name must be at most ${MAX_TEAM_NAME} characters.`, field: 'championTeamName' })
       return
     }
     if (notes.trim().length > MAX_NOTES) {
-      setError(`Notes must be at most ${MAX_NOTES} characters.`)
+      setError({ message: `Notes must be at most ${MAX_NOTES} characters.`, field: 'notes' })
       return
     }
 
@@ -80,7 +103,7 @@ export default function SeasonRecordForm({
         notes: notes.trim() || undefined,
       })
       if (result.error) {
-        setError(result.error)
+        setError({ message: result.error })
         return
       }
       router.push(`/leagues/${leagueId}/history`)
@@ -88,16 +111,20 @@ export default function SeasonRecordForm({
     })
   }
 
-  const inputClass =
-    'w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary'
-
   return (
-    <div className="space-y-4">
-      <div>
-        <label htmlFor={`year-${leagueId}`} className="mb-1.5 block text-sm font-medium text-foreground">
-          Season year
-        </label>
-        <input
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        submit()
+      }}
+      className="space-y-5"
+    >
+      <Field
+        label="Season year"
+        htmlFor={`year-${leagueId}`}
+        error={fieldError('seasonYear')}
+      >
+        <Input
           id={`year-${leagueId}`}
           type="number"
           inputMode="numeric"
@@ -105,22 +132,23 @@ export default function SeasonRecordForm({
           max={SEASON_YEAR_MAX}
           step={1}
           value={seasonYear}
+          disabled={pending}
           onChange={(e) => setSeasonYear(e.target.value)}
-          className={inputClass}
-          required
+          aria-invalid={fieldError('seasonYear') ? true : undefined}
         />
-      </div>
+      </Field>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label htmlFor={`champ-member-${leagueId}`} className="mb-1.5 block text-sm font-medium text-foreground">
-            Champion (member)
-          </label>
-          <select
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <Field
+          label="Champion (member)"
+          htmlFor={`champ-member-${leagueId}`}
+          hint="Leave both champion fields empty only if this season has no champion to record."
+        >
+          <Select
             id={`champ-member-${leagueId}`}
             value={championMemberId}
+            disabled={pending}
             onChange={(e) => setChampionMemberId(e.target.value)}
-            className={inputClass}
           >
             <option value="">— none —</option>
             {members.map((m) => (
@@ -128,33 +156,35 @@ export default function SeasonRecordForm({
                 {m.label}
               </option>
             ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor={`champ-team-${leagueId}`} className="mb-1.5 block text-sm font-medium text-foreground">
-            Champion team name
-          </label>
-          <input
+          </Select>
+        </Field>
+        <Field
+          label="Champion team name"
+          htmlFor={`champ-team-${leagueId}`}
+          error={fieldError('championTeamName')}
+        >
+          <Input
             id={`champ-team-${leagueId}`}
             type="text"
             value={championTeamName}
+            maxLength={MAX_TEAM_NAME}
+            disabled={pending}
             onChange={(e) => setChampionTeamName(e.target.value)}
             placeholder="Optional if a member is selected"
-            maxLength={MAX_TEAM_NAME}
-            className={inputClass}
+            aria-invalid={fieldError('championTeamName') ? true : undefined}
           />
-        </div>
+        </Field>
       </div>
 
-      <div>
-        <label htmlFor={`runner-${leagueId}`} className="mb-1.5 block text-sm font-medium text-foreground">
-          Runner-up (member)
-        </label>
-        <select
+      <Field
+        label="Runner-up (member)"
+        htmlFor={`runner-${leagueId}`}
+      >
+        <Select
           id={`runner-${leagueId}`}
           value={runnerUpMemberId}
+          disabled={pending}
           onChange={(e) => setRunnerUpMemberId(e.target.value)}
-          className={inputClass}
         >
           <option value="">— none —</option>
           {members.map((m) => (
@@ -162,41 +192,32 @@ export default function SeasonRecordForm({
               {m.label}
             </option>
           ))}
-        </select>
-      </div>
+        </Select>
+      </Field>
 
-      <div>
-        <label htmlFor={`notes-${leagueId}`} className="mb-1.5 block text-sm font-medium text-foreground">
-          Notes
-        </label>
-        <textarea
+      <Field
+        label="Notes"
+        htmlFor={`notes-${leagueId}`}
+        hint={`${notes.trim().length}/${MAX_NOTES} characters`}
+        error={fieldError('notes')}
+      >
+        <Textarea
           id={`notes-${leagueId}`}
           value={notes}
-          onChange={(e) => setNotes(e.target.value)}
           rows={3}
           maxLength={MAX_NOTES}
+          disabled={pending}
+          onChange={(e) => setNotes(e.target.value)}
           placeholder="Championship results, drama, anything worth remembering"
-          className={inputClass}
+          aria-invalid={fieldError('notes') ? true : undefined}
         />
-        <p className="mt-1 text-xs text-muted-foreground">
-          {notes.trim().length}/{MAX_NOTES}
-        </p>
-      </div>
+      </Field>
 
-      {error && (
-        <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
-      )}
+      {error && !error.field && <FormMessage>{error.message}</FormMessage>}
 
-      <button
-        type="button"
-        onClick={submit}
-        disabled={pending}
-        className="inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 sm:w-auto"
-      >
-        {pending ? 'Saving…' : submitLabel}
-      </button>
-    </div>
+      <SubmitButton loading={pending} className="w-full sm:w-auto">
+        {submitLabel}
+      </SubmitButton>
+    </form>
   )
 }

@@ -7,6 +7,11 @@ import { updateRule, deleteRule } from '@/app/actions/rules'
 import type { RuleView } from '@/src/lib/rules'
 import MarkdownBody from '@/src/components/markdown-body'
 import { formatDate } from '@/src/lib/display'
+import { Field } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { FormMessage } from '@/components/ui/form-message'
+import { SubmitButton } from '@/components/ui/submit-button'
 
 /**
  * One rule inside the rulebook (Rules-2).
@@ -33,7 +38,7 @@ export default function RuleCard({
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [title, setTitle] = useState(rule.title)
   const [body, setBody] = useState(rule.body)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<{ message: string; field?: 'title' | 'body' } | null>(null)
   const [pending, startTransition] = useTransition()
 
   const versionCount = rule.versions.length
@@ -53,18 +58,18 @@ export default function RuleCard({
 
   function save() {
     if (!title.trim()) {
-      setError('Title is required.')
+      setError({ message: 'Title is required.', field: 'title' })
       return
     }
     if (!body.trim()) {
-      setError('Body cannot be empty.')
+      setError({ message: 'Body cannot be empty.', field: 'body' })
       return
     }
     setError(null)
     startTransition(async () => {
       const result = await updateRule(rule.id, { title: title.trim(), body })
       if (result.error) {
-        setError(result.error)
+        setError({ message: result.error })
         return
       }
       setEditing(false)

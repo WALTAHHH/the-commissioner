@@ -4,6 +4,12 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Link2, Link2Off } from 'lucide-react'
 import { createRule } from '@/app/actions/rules'
+import { Field } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { FormMessage } from '@/components/ui/form-message'
+import { SubmitButton } from '@/components/ui/submit-button'
 
 /**
  * Create-rule form (Rules-2). Submit calls the createRule server action with
@@ -11,7 +17,19 @@ import { createRule } from '@/app/actions/rules'
  * the rulebook, where the freshly-inserted rule appears.
  *
  * Category is optional; leaving it blank files the rule under "Uncategorized".
+ *
+ * Error placement follows the form pattern: local validation for a specific
+ * field renders in that field's error slot; everything else (server-side
+ * failures) renders as one banner after the fields.
  */
+type FieldKey = 'title' | 'body'
+
+interface FormError {
+  message: string
+  /** undefined → whole-form banner instead of a per-field error */
+  field?: FieldKey
+}
+
 export default function RuleForm({
   leagueId,
   categories,
@@ -23,19 +41,21 @@ export default function RuleForm({
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [categoryId, setCategoryId] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<FormError | null>(null)
   const [pending, startTransition] = useTransition()
 
   const hasCategories = categories.length > 0
+  const fieldError = (key: FieldKey) =>
+    error?.field === key ? error.message : null
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!title.trim()) {
-      setError('Title is required.')
+      setError({ message: 'Title is required.', field: 'title' })
       return
     }
     if (!body.trim()) {
-      setError('Body cannot be empty.')
+      setError({ message: 'Body cannot be empty.', field: 'body' })
       return
     }
     setError(null)
@@ -46,7 +66,7 @@ export default function RuleForm({
         categoryId: categoryId || undefined,
       })
       if (result.error) {
-        setError(result.error)
+        setError({ message: result.error })
         return
       }
       router.push(`/leagues/${leagueId}/rules`)
@@ -57,53 +77,52 @@ export default function RuleForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-6 rounded-2xl border border-border bg-card p-6 sm:p-8"
+      className="space-y-6 rounded-2xl border border-border bg-card p-5 sm:p-8"
     >
-      {/* Title */}
-      <div>
-        <label
-          htmlFor="rule-title"
-          className="mb-1.5 block text-sm font-medium text-foreground"
-        >
-          Title
-        </label>
-        <input
+      <Field
+        label="Title"
+        htmlFor="rule-title"
+        hint="Shown in the rulebook list — keep it short."
+        error={fieldError('title')}
+      >
+        <Input
           id="rule-title"
           type="text"
           value={title}
           maxLength={200}
           required
+          disabled={pending}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Trade deadline"
-          className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 focus:border-ring focus:outline-none"
+          aria-invalid={fieldError('title') ? true : undefined}
         />
-      </div>
+      </Field>
 
-      {/* Category (optional) */}
-      <div>
-        <label
-          htmlFor="rule-category"
-          className="mb-1.5 flex items-center gap-2 text-sm font-medium text-foreground"
-        >
-          Category
-          <span className="inline-flex items-center text-xs font-normal text-muted-foreground">
-            {hasCategories ? (
-              <>
-                <Link2 className="mr-1 h-3 w-3" /> optional
-              </>
-            ) : (
-              <>
-                <Link2Off className="mr-1 h-3 w-3" /> no categories in this league yet
-              </>
-            )}
-          </span>
-        </label>
-        <select
+      <Field
+        label={
+          <>
+            Category{' '}
+            <span className="inline-flex items-center text-xs font-normal text-muted-foreground">
+              {hasCategories ? (
+                <>
+                  <Link2 className="mr-1 h-3 w-3" /> optional
+                </>
+              ) : (
+                <>
+                  <Link2Off className="mr-1 h-3 w-3" /> no categories in this league yet
+                </>
+              )}
+            </span>
+          </>
+        }
+        htmlFor="rule-category"
+        hint="Leave as “Uncategorized” to file without one."
+      >
+        <Select
           id="rule-category"
           value={categoryId}
           onChange={(e) => setCategoryId(e.target.value)}
-          disabled={!hasCategories}
-          className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none disabled:opacity-50"
+          disabled={!hasCategories || pending}
         >
           <option value="">Uncategorized</option>
           {categories.map((category) => (
@@ -111,54 +130,40 @@ export default function RuleForm({
               {category.name}
             </option>
           ))}
-        </select>
-      </div>
+        </Select>
+      </Field>
 
-      {/* Body */}
-      <div>
-        <label
-          htmlFor="rule-body"
-          className="mb-1.5 block text-sm font-medium text-foreground"
-        >
-          Body{' '}
-          <span className="font-normal text-muted-foreground">
-            (markdown supported)
-          </span>
-        </label>
-        <textarea
+      <Field
+        label="Body"
+        htmlFor="rule-body"
+        hint="Markdown supported."
+        error={fieldError('body')}
+      >
+        <Textarea
           id="rule-body"
           value={body}
           rows={10}
           required
+          disabled={pending}
           onChange={(e) => setBody(e.target.value)}
           placeholder={'Trades must be completed by **Week 9**.\n\n- Both managers must agree\n- No trades after the playoff lock'}
-          className="w-full rounded-md border border-input bg-card px-3 py-2 font-mono text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none"
+          className="font-mono leading-relaxed"
+          aria-invalid={fieldError('body') ? true : undefined}
         />
-      </div>
+      </Field>
 
-      {error && (
-        <p role="alert" className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {error}
-        </p>
-      )}
+      {error && !error.field && <FormMessage>{error.message}</FormMessage>}
 
-      {/* Actions */}
       <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
-        <button
-          type="submit"
-          disabled={pending}
-          className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
-          {pending ? 'Creating…' : 'Create rule'}
-        </button>
-        <button
+        <SubmitButton loading={pending}>Create rule</SubmitButton>
+        <SubmitButton
           type="button"
-          onClick={() => router.push(`/leagues/${leagueId}/rules`)}
+          variant="outline"
           disabled={pending}
-          className="inline-flex items-center justify-center rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
+          onClick={() => router.push(`/leagues/${leagueId}/rules`)}
         >
           Cancel
-        </button>
+        </SubmitButton>
       </div>
     </form>
   )

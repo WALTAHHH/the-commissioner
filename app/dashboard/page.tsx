@@ -30,9 +30,7 @@ export default async function DashboardPage() {
           <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
             Your leagues
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Logged in as: <span className="font-medium">{user.email}</span>
-          </p>
+          
         </div>
         <Link
           href="/leagues/new"
@@ -95,14 +93,14 @@ export default async function DashboardPage() {
             {leagues.map((league) => (
               <div
                 key={league.id}
-                className="group rounded-2xl border border-border bg-card p-6 shadow-sm transition-all hover:border-blue-300 hover:shadow-md dark:hover:border-blue-800"
+                className="group rounded-2xl border border-border bg-card p-6 shadow-sm transition-all hover:border-primary/50 hover:shadow-md dark:hover:border-primary/80"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
                     <h2 className="text-xl font-semibold leading-6 text-foreground">
                       <Link
                         href={`/leagues/${league.id}`}
-                        className="hover:text-blue-600 dark:hover:text-blue-400"
+                        className="hover:text-primary dark:hover:text-primary/80"
                       >
                         {league.name}
                       </Link>
@@ -112,7 +110,7 @@ export default async function DashboardPage() {
                     </p>
                   </div>
                   {league.isCommissioner && (
-                    <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-800 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                    <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary dark:border-primary/30 dark:bg-primary/20 dark:text-primary/90">
                       Commissioner
                     </span>
                   )}

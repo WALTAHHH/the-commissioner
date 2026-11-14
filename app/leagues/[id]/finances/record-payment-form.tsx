@@ -2,9 +2,13 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { BadgeCheck, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { recordPayment } from '@/app/actions/finances'
 import type { FinancesObligationView } from '@/src/lib/finances'
+import { Field } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { FormMessage } from '@/components/ui/form-message'
+import { SubmitButton } from '@/components/ui/submit-button'
 
 /**
  * Inline "Record payment" form (Finances-2, commissioner only).
@@ -14,7 +18,15 @@ import type { FinancesObligationView } from '@/src/lib/finances'
  * haircut) — it can only ever insert a bookkeeping row. Amount prefills with
  * what's still outstanding; notes optional. Submit calls the recordPayment
  * server action, which re-checks authorization and writes the payment.
+ *
+ * Bad amount input renders in the amount field's error slot; server-side
+ * failures render as a banner before the actions.
  */
+interface FormError {
+  message: string
+  field?: 'amount'
+}
+
 export default function RecordPaymentForm({
   obligation,
   onDone,
@@ -26,23 +38,23 @@ export default function RecordPaymentForm({
   const remaining = Math.max(0, obligation.amount - obligation.paidAmount)
   const [amount, setAmount] = useState(remaining.toFixed(2))
   const [notes, setNotes] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<FormError | null>(null)
   const [pending, startTransition] = useTransition()
 
   function submit() {
+    setError(null)
     const parsed = Number(amount)
     if (!Number.isFinite(parsed) || parsed <= 0) {
-      setError('Enter a positive amount.')
+      setError({ message: 'Enter a positive amount.', field: 'amount' })
       return
     }
-    setError(null)
     startTransition(async () => {
       const result = await recordPayment(obligation.id, {
         amount: parsed,
         notes: notes.trim() || undefined,
       })
       if (result.error) {
-        setError(result.error)
+        setError({ message: result.error })
         return
       }
       router.refresh()
@@ -51,63 +63,67 @@ export default function RecordPaymentForm({
   }
 
   return (
-    <div className="mt-3 rounded-xl border border-border bg-muted/40 p-4">
-      <div className="flex items-center justify-between">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        submit()
+      }}
+      className="mt-3 rounded-xl border border-border bg-muted/40 p-4"
+    >
+      <div className="flex items-center justify-between gap-2">
         <h4 className="text-sm font-semibold text-foreground">Record payment</h4>
         <button
           type="button"
           onClick={onDone}
-          className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          disabled={pending}
+          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
           aria-label="Close payment form"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
-      <p className="mt-1 text-xs text-muted-foreground">
+      <p className="mt-1 break-words text-xs text-muted-foreground">
         Money was paid outside the app — this logs it against “
         {obligation.description}”.
       </p>
 
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[10rem_1fr]">
-        <label className="block text-xs font-medium text-muted-foreground">
-          Amount ($)
-          <input
+        <Field
+          label="Amount ($)"
+          htmlFor={`payment-amount-${obligation.id}`}
+          error={error?.field === 'amount' ? error.message : null}
+        >
+          <Input
+            id={`payment-amount-${obligation.id}`}
             type="number"
             min="0.01"
             step="0.01"
+            inputMode="decimal"
             value={amount}
+            disabled={pending}
             onChange={(e) => setAmount(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+            aria-invalid={error?.field === 'amount' ? true : undefined}
           />
-        </label>
-        <label className="block text-xs font-medium text-muted-foreground">
-          Notes (optional)
-          <input
+        </Field>
+        <Field
+          label="Notes (optional)"
+          htmlFor={`payment-notes-${obligation.id}`}
+        >
+          <Input
+            id={`payment-notes-${obligation.id}`}
             type="text"
             maxLength={1000}
             value={notes}
+            disabled={pending}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Cash at the drafts party…"
-            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
           />
-        </label>
+        </Field>
       </div>
 
-      {error && (
-        <p className="mt-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {error}
-        </p>
-      )}
+      {error && !error.field && <FormMessage className="mt-3">{error.message}</FormMessage>}
 
-      <button
-        type="button"
-        onClick={submit}
-        disabled={pending}
-        className="mt-3 inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:bg-primary/90 disabled:opacity-50"
-      >
-        <BadgeCheck className="mr-2 h-4 w-4" />
-        {pending ? 'Recording…' : 'Save payment'}
-      </button>
-    </div>
+      <SubmitButton loading={pending} className="mt-3">Save payment</SubmitButton>
+    </form>
   )
 }

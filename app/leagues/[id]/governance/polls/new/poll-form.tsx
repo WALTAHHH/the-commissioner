@@ -5,6 +5,11 @@ import { useRouter } from 'next/navigation'
 import { Link2, Plus, X } from 'lucide-react'
 import { createPoll } from '@/app/actions/governance'
 import type { PollThreshold, PollType } from '@/src/db/schema/governance'
+import { Field } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { FormMessage } from '@/components/ui/form-message'
+import { SubmitButton } from '@/components/ui/submit-button'
 
 const MAX_TITLE = 200
 const MAX_DESCRIPTION = 2000
@@ -35,7 +40,17 @@ const WINDOWS = [
  * `closePoll` scores a custom poll as `leading votes >= custom_threshold`.
  * A custom poll with no number recorded could never meet its threshold, so
  * the form refuses to create one.
+ *
+ * Field errors render in the offending field's error slot; server-side
+ * failures render as one banner before the actions.
  */
+type FieldKey = 'title' | 'description' | 'options' | 'window' | 'customThreshold'
+
+interface FormError {
+  message: string
+  field?: FieldKey
+}
+
 export default function PollForm({ leagueId }: { leagueId: string }) {
   const router = useRouter()
   const [title, setTitle] = useState('')
@@ -46,8 +61,11 @@ export default function PollForm({ leagueId }: { leagueId: string }) {
   const [options, setOptions] = useState<string[]>(['', ''])
   const [windowHours, setWindowHours] = useState<number>(72)
   const [customWindow, setCustomWindow] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<FormError | null>(null)
   const [pending, startTransition] = useTransition()
+
+  const fieldError = (key: FieldKey) =>
+    error?.field === key ? error.message : null
 
   function setOption(index: number, value: string) {
     setOptions((prev) => prev.map((opt, i) => (i === index ? value : opt)))
@@ -68,15 +86,15 @@ export default function PollForm({ leagueId }: { leagueId: string }) {
 
     const trimmedTitle = title.trim()
     if (!trimmedTitle) {
-      setError('Title is required.')
+      setError({ message: 'Title is required.', field: 'title' })
       return
     }
     if (trimmedTitle.length > MAX_TITLE) {
-      setError(`Title must be at most ${MAX_TITLE} characters.`)
+      setError({ message: `Title must be at most ${MAX_TITLE} characters.`, field: 'title' })
       return
     }
     if (description.length > MAX_DESCRIPTION) {
-      setError(`Description must be at most ${MAX_DESCRIPTION} characters.`)
+      setError({ message: `Description must be at most ${MAX_DESCRIPTION} characters.`, field: 'description' })
       return
     }
 
@@ -84,21 +102,21 @@ export default function PollForm({ leagueId }: { leagueId: string }) {
     for (const option of options) {
       const value = option.trim()
       if (!value) {
-        setError('Every option needs text — remove the blank one or fill it in.')
+        setError({ message: 'Every option needs text — remove the blank one or fill it in.', field: 'options' })
         return
       }
       if (value.length > MAX_OPTION_CHARS) {
-        setError(`Each option must be at most ${MAX_OPTION_CHARS} characters.`)
+        setError({ message: `Each option must be at most ${MAX_OPTION_CHARS} characters.`, field: 'options' })
         return
       }
       filled.push(value)
     }
     if (filled.length < 2) {
-      setError('At least two options are required.')
+      setError({ message: 'At least two options are required.', field: 'options' })
       return
     }
     if (new Set(filled).size < filled.length) {
-      setError('Options must be distinct.')
+      setError({ message: 'Options must be distinct.', field: 'options' })
       return
     }
 
@@ -107,7 +125,7 @@ export default function PollForm({ leagueId }: { leagueId: string }) {
       windowHours < MIN_WINDOW_HOURS ||
       windowHours > MAX_WINDOW_HOURS
     ) {
-      setError(`Voting window must be between ${MIN_WINDOW_HOURS} and ${MAX_WINDOW_HOURS} hours.`)
+      setError({ message: `Voting window must be between ${MIN_WINDOW_HOURS} and ${MAX_WINDOW_HOURS} hours.`, field: 'window' })
       return
     }
 
@@ -121,9 +139,10 @@ export default function PollForm({ leagueId }: { leagueId: string }) {
         parsed < MIN_CUSTOM_THRESHOLD ||
         parsed > MAX_CUSTOM_THRESHOLD
       ) {
-        setError(
-          `A custom threshold needs a whole number between ${MIN_CUSTOM_THRESHOLD} and ${MAX_CUSTOM_THRESHOLD} votes.`,
-        )
+        setError({
+          message: `A custom threshold needs a whole number between ${MIN_CUSTOM_THRESHOLD} and ${MAX_CUSTOM_THRESHOLD} votes.`,
+          field: 'customThreshold',
+        })
         return
       }
       customThresholdValue = parsed
@@ -140,7 +159,7 @@ export default function PollForm({ leagueId }: { leagueId: string }) {
         votingWindowHours: windowHours,
       })
       if (result.error || !result.pollId) {
-        setError(result.error ?? 'Failed to create poll.')
+        setError({ message: result.error ?? 'Failed to create poll.' })
         return
       }
       router.push(`/leagues/${leagueId}/governance/polls/${result.pollId}`)
@@ -149,33 +168,53 @@ export default function PollForm({ leagueId }: { leagueId: string }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        submit()
+      }}
+      className="mx-auto w-full max-w-2xl space-y-6"
+    >
       {/* Title */}
-      <Field label="Title" hint={`${title.length}/${MAX_TITLE}`}>
-        <input
+      <Field
+        label="Title"
+        htmlFor="poll-title"
+        hint={`${title.length}/${MAX_TITLE} characters`}
+        error={fieldError('title')}
+      >
+        <Input
+          id="poll-title"
           type="text"
           value={title}
           maxLength={MAX_TITLE}
+          disabled={pending}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Should we move the trade deadline?"
-          className={INPUT_CLASS}
+          aria-invalid={fieldError('title') ? true : undefined}
         />
       </Field>
 
       {/* Description */}
-      <Field label="Description" hint="Optional">
-        <textarea
+      <Field
+        label="Description"
+        htmlFor="poll-description"
+        hint="Optional — context so everyone is voting on the same question."
+        error={fieldError('description')}
+      >
+        <Textarea
+          id="poll-description"
           value={description}
           maxLength={MAX_DESCRIPTION}
           rows={3}
+          disabled={pending}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Context so everyone is voting on the same question."
-          className={`${INPUT_CLASS} resize-y`}
+          aria-invalid={fieldError('description') ? true : undefined}
         />
       </Field>
 
       {/* Type */}
-      <Field label="Type">
+      <Field label="Type" hint="Informal is a temperature check; binding can record a decision.">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {(
             [
@@ -188,7 +227,8 @@ export default function PollForm({ leagueId }: { leagueId: string }) {
               type="button"
               onClick={() => setType(option.key)}
               aria-pressed={type === option.key}
-              className={`rounded-xl border px-4 py-3 text-left transition-colors ${
+              disabled={pending}
+              className={`rounded-xl border px-4 py-3 text-left transition-colors disabled:opacity-60 ${
                 type === option.key
                   ? 'border-primary bg-primary/10 text-primary'
                   : 'border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -205,7 +245,10 @@ export default function PollForm({ leagueId }: { leagueId: string }) {
       </Field>
 
       {/* Threshold */}
-      <Field label="Approval threshold" hint="How the winner has to win">
+      <Field
+        label="Approval threshold"
+        hint="Majority, supermajority and unanimity are measured against votes cast, not league membership — turnout is shown separately on every poll. A custom threshold is an absolute number of votes for the winning option."
+      >
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {(
             [
@@ -220,7 +263,8 @@ export default function PollForm({ leagueId }: { leagueId: string }) {
               type="button"
               onClick={() => setThreshold(option.key)}
               aria-pressed={threshold === option.key}
-              className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${
+              disabled={pending}
+              className={`rounded-xl border px-3 py-2.5 text-left transition-colors disabled:opacity-60 ${
                 threshold === option.key
                   ? 'border-primary bg-primary/10 text-primary'
                   : 'border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -233,38 +277,34 @@ export default function PollForm({ leagueId }: { leagueId: string }) {
         </div>
         {threshold === 'custom' && (
           <div className="mt-3 rounded-xl border border-border bg-muted/40 px-4 py-3">
-            <label
+            <Field
+              label="Winning option needs at least"
               htmlFor="custom-threshold"
-              className="block text-sm font-medium text-foreground"
+              hint={`Whole number of votes, ${MIN_CUSTOM_THRESHOLD}–${MAX_CUSTOM_THRESHOLD}.`}
+              error={fieldError('customThreshold')}
             >
-              Winning option needs at least
-              <span className="ml-2 text-xs font-normal text-muted-foreground">
-                votes (whole number, {MIN_CUSTOM_THRESHOLD}–{MAX_CUSTOM_THRESHOLD})
-              </span>
-            </label>
-            <input
-              id="custom-threshold"
-              type="number"
-              min={MIN_CUSTOM_THRESHOLD}
-              max={MAX_CUSTOM_THRESHOLD}
-              step={1}
-              value={customThreshold}
-              onChange={(e) => setCustomThreshold(e.target.value)}
-              className={`${INPUT_CLASS} mt-2 w-32`}
-            />
+              <Input
+                id="custom-threshold"
+                type="number"
+                min={MIN_CUSTOM_THRESHOLD}
+                max={MAX_CUSTOM_THRESHOLD}
+                step={1}
+                value={customThreshold}
+                disabled={pending}
+                onChange={(e) => setCustomThreshold(e.target.value)}
+                className="w-32"
+                aria-invalid={fieldError('customThreshold') ? true : undefined}
+              />
+            </Field>
           </div>
         )}
-        <p className="mt-2 text-xs text-muted-foreground">
-          Majority, supermajority and unanimity are measured against votes cast, not
-          league membership — turnout is shown separately on every poll. A custom
-          threshold is an absolute number of votes for the winning option.
-        </p>
       </Field>
 
       {/* Options */}
       <Field
         label="Options"
-        hint={`${options.length} of ${MAX_OPTIONS} · at least 2`}
+        hint={`${options.length} of ${MAX_OPTIONS} · at least 2, all distinct`}
+        error={fieldError('options')}
       >
         <div className="space-y-2">
           {options.map((option, index) => (
@@ -272,18 +312,20 @@ export default function PollForm({ leagueId }: { leagueId: string }) {
               <span className="w-5 shrink-0 text-center text-xs font-medium text-muted-foreground">
                 {index + 1}
               </span>
-              <input
+              <Input
                 type="text"
                 value={option}
                 maxLength={MAX_OPTION_CHARS}
+                disabled={pending}
                 onChange={(e) => setOption(index, e.target.value)}
                 placeholder={index === 0 ? 'First option' : 'Another option'}
-                className={INPUT_CLASS}
+                aria-label={`Option ${index + 1}`}
+                aria-invalid={fieldError('options') ? true : undefined}
               />
               <button
                 type="button"
                 onClick={() => removeOption(index)}
-                disabled={options.length <= 2}
+                disabled={options.length <= 2 || pending}
                 aria-label={`Remove option ${index + 1}`}
                 className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -295,7 +337,7 @@ export default function PollForm({ leagueId }: { leagueId: string }) {
         <button
           type="button"
           onClick={addOption}
-          disabled={options.length >= MAX_OPTIONS}
+          disabled={options.length >= MAX_OPTIONS || pending}
           className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Plus className="h-4 w-4" />
@@ -304,8 +346,8 @@ export default function PollForm({ leagueId }: { leagueId: string }) {
       </Field>
 
       {/* Voting window */}
-      <Field label="Voting window" hint={`${windowHours} hours`}>
-        <div className="flex flex-wrap gap-2">
+      <Field label="Voting window" hint={`${windowHours} hours — the poll shows a countdown to this deadline. It is not closed automatically; the commissioner closes it to record the result.`} error={fieldError('window')}>
+        <div className="flex flex-wrap items-center gap-2">
           {WINDOWS.map((preset) => (
             <button
               key={preset.hours}
@@ -315,7 +357,8 @@ export default function PollForm({ leagueId }: { leagueId: string }) {
                 setCustomWindow(false)
               }}
               aria-pressed={!customWindow && windowHours === preset.hours}
-              className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${
+              disabled={pending}
+              className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors disabled:opacity-60 ${
                 !customWindow && windowHours === preset.hours
                   ? 'border-primary bg-primary/10 text-primary'
                   : 'border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -328,7 +371,8 @@ export default function PollForm({ leagueId }: { leagueId: string }) {
             type="button"
             onClick={() => setCustomWindow(true)}
             aria-pressed={customWindow}
-            className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${
+            disabled={pending}
+            className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors disabled:opacity-60 ${
               customWindow
                 ? 'border-primary bg-primary/10 text-primary'
                 : 'border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -337,73 +381,35 @@ export default function PollForm({ leagueId }: { leagueId: string }) {
             Custom
           </button>
           {customWindow && (
-            <input
+            <Input
               type="number"
               min={MIN_WINDOW_HOURS}
               max={MAX_WINDOW_HOURS}
               step={1}
               value={windowHours}
+              disabled={pending}
               onChange={(e) => setWindowHours(Math.trunc(Number(e.target.value)))}
               aria-label="Voting window in hours"
-              className={`${INPUT_CLASS} w-28`}
+              className="w-28"
+              aria-invalid={fieldError('window') ? true : undefined}
             />
           )}
         </div>
-        <p className="mt-2 text-xs text-muted-foreground">
-          The poll shows a countdown to this deadline. It is not closed automatically — the
-          commissioner closes it to record the result.
-        </p>
       </Field>
 
-      {error && (
-        <p
-          role="alert"
-          className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-        >
-          {error}
-        </p>
-      )}
+      {error && !error.field && <FormMessage>{error.message}</FormMessage>}
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-        <button
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        <SubmitButton
           type="button"
+          variant="outline"
+          disabled={pending}
           onClick={() => router.push(`/leagues/${leagueId}/governance`)}
-          className="inline-flex items-center justify-center rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
         >
           Cancel
-        </button>
-        <button
-          type="button"
-          onClick={submit}
-          disabled={pending}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {pending ? 'Creating…' : 'Create poll'}
-        </button>
+        </SubmitButton>
+        <SubmitButton loading={pending}>Create poll</SubmitButton>
       </div>
-    </div>
-  )
-}
-
-const INPUT_CLASS =
-  'w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary'
-
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string
-  hint?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div>
-      <div className="mb-2 flex items-baseline justify-between gap-3">
-        <label className="text-sm font-semibold text-foreground">{label}</label>
-        {hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
-      </div>
-      {children}
-    </div>
+    </form>
   )
 }

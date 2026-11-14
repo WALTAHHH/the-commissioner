@@ -3,6 +3,9 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { extractInviteToken } from '@/src/lib/invitations'
+import { Field } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { SubmitButton } from '@/components/ui/submit-button'
 
 /**
  * "Have an invite link?" box on the authenticated home (Phase 1 / T5).
@@ -11,6 +14,9 @@ import { extractInviteToken } from '@/src/lib/invitations'
  * redeeming here: that page already owns the validity states, the signed-out
  * round trip to /login?next=..., and the "you're already a member" card, and
  * T3's action refuses to run without a session.
+ *
+ * A bad paste is a field-level failure, so it renders in the field's error
+ * slot (and highlights the input) rather than as a banner.
  */
 export default function RedeemInviteForm() {
   const router = useRouter()
@@ -32,35 +38,30 @@ export default function RedeemInviteForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-2">
-      <label
+      <Field
+        label="Have an invite link?"
         htmlFor="invite-link"
-        className="block text-sm font-medium text-foreground"
+        error={error || null}
       >
-        Have an invite link?
-      </label>
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <input
-          id="invite-link"
-          name="invite"
-          type="text"
-          inputMode="url"
-          autoComplete="off"
-          spellCheck={false}
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          placeholder="Paste an invite link or code"
-          className="w-full min-w-0 flex-1 rounded border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 focus:border-ring focus:outline-none"
-        />
-        <button
-          type="submit"
-          className="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-        >
-          Open invite
-        </button>
-      </div>
-      {error && (
-        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-      )}
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Input
+            id="invite-link"
+            name="invite"
+            type="text"
+            inputMode="url"
+            autoComplete="off"
+            spellCheck={false}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            placeholder="Paste an invite link or code"
+            className="flex-1"
+            aria-invalid={error ? true : undefined}
+          />
+          <SubmitButton className="w-full shrink-0 sm:w-auto">
+            Open invite
+          </SubmitButton>
+        </div>
+      </Field>
     </form>
   )
 }

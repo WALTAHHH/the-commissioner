@@ -17,8 +17,10 @@ import {
   Wallet,
   Scale,
   History,
+  Megaphone,
 } from 'lucide-react'
 import SignOutButton from './SignOutButton'
+import { getLeagueName } from '@/app/actions/league-nav'
 import { cn } from 'cn'
 
 const LEAGUE_PATH = /^\/leagues\/([^/?#]+)/
@@ -38,20 +40,47 @@ type AppNavProps = {
 export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavProps) {
   const pathname = usePathname()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const [leagueId, setLeagueId] = useState<string | null>(null)
+
+  // Derived during render, not in an effect: a client-side navigation into (or
+  // between) league pages then highlights the right section on the first frame
+  // instead of one render after.
+  const pathLeagueId = pathname.match(LEAGUE_PATH)?.[1]
+  const leagueId =
+    pathLeagueId && pathLeagueId !== 'new' ? pathLeagueId : fallbackLeagueId
+
+  // The switcher shows the league's real name, never a truncated id. The name
+  // is fetched for the current leagueId (loadLeagueContext under the hood, so
+  // it is null for a league the viewer cannot see).
+  const [leagueName, setLeagueName] = useState<string | null>(null)
 
   useEffect(() => {
-    const match = pathname.match(LEAGUE_PATH)
-    const segment = match?.[1]
-    if (segment && segment !== 'new') {
-      setLeagueId(segment)
-    } else {
-      setLeagueId(fallbackLeagueId)
+    if (!leagueId) {
+      setLeagueName(null)
+      return
     }
-  }, [pathname, fallbackLeagueId])
+    let cancelled = false
+    setLeagueName(null)
+    getLeagueName(leagueId)
+      .then((name) => {
+        if (!cancelled) setLeagueName(name)
+      })
+      .catch(() => {
+        if (!cancelled) setLeagueName(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [leagueId])
 
-  const inLeague = (suffix: string) =>
-    leagueId !== null && pathname.startsWith(`/leagues/${leagueId}/${suffix}`)
+  // Active section for any route under it: /finances, /finances/ledger,
+  // /governance/polls/new all light up their top-level entry. The trailing
+  // '/' guard keeps a sibling route that merely shares a prefix (e.g. a
+  // hypothetical /activity-log) from highlighting the wrong entry.
+  const inLeague = (suffix: string) => {
+    if (!leagueId) return false
+    const base = `/leagues/${leagueId}/${suffix}`
+    return pathname === base || pathname.startsWith(`${base}/`)
+  }
 
   const navItems: NavItem[] = [
     {
@@ -61,10 +90,10 @@ export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavPro
       active: pathname === '/dashboard' || pathname.startsWith('/dashboard/'),
     },
     {
-      label: 'Members',
-      href: leagueId ? `/leagues/${leagueId}/members` : null,
-      icon: <Users className="h-5 w-5" />,
-      active: inLeague('members'),
+      label: 'Announcements',
+      href: leagueId ? `/leagues/${leagueId}/announcements` : null,
+      icon: <Megaphone className="h-5 w-5" />,
+      active: inLeague('announcements'),
     },
     {
       label: 'Rules',
@@ -73,22 +102,16 @@ export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavPro
       active: inLeague('rules'),
     },
     {
-      label: 'Activity',
-      href: leagueId ? `/leagues/${leagueId}/activity` : null,
-      icon: <Activity className="h-5 w-5" />,
-      active: inLeague('activity'),
-    },
-    {
-      label: 'Integrations',
-      href: leagueId ? `/leagues/${leagueId}/integrations` : null,
-      icon: <Plug className="h-5 w-5" />,
-      active: inLeague('integrations'),
-    },
-    {
       label: 'Finances',
       href: leagueId ? `/leagues/${leagueId}/finances` : null,
       icon: <Wallet className="h-5 w-5" />,
       active: inLeague('finances'),
+    },
+    {
+      label: 'Activity',
+      href: leagueId ? `/leagues/${leagueId}/activity` : null,
+      icon: <Activity className="h-5 w-5" />,
+      active: inLeague('activity'),
     },
     {
       label: 'Governance',
@@ -103,6 +126,18 @@ export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavPro
       active: inLeague('history'),
     },
     {
+      label: 'Integrations',
+      href: leagueId ? `/leagues/${leagueId}/integrations` : null,
+      icon: <Plug className="h-5 w-5" />,
+      active: inLeague('integrations'),
+    },
+    {
+      label: 'Members',
+      href: leagueId ? `/leagues/${leagueId}/members` : null,
+      icon: <Users className="h-5 w-5" />,
+      active: inLeague('members'),
+    },
+    {
       label: 'Settings',
       href: leagueId ? `/leagues/${leagueId}/settings` : null,
       icon: <Settings className="h-5 w-5" />,
@@ -110,8 +145,8 @@ export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavPro
     },
   ]
 
-  // League switcher placeholder
-  const leagueName = leagueId ? `League ${leagueId.slice(0, 4)}…` : 'Select League'
+  // League switcher label: the fetched real name, else a neutral placeholder.
+  const leagueSwitcherLabel = leagueName ?? (leagueId ? 'Loading…' : 'Select League')
 
   // Desktop sidebar
   const desktopSidebar = (
@@ -135,7 +170,7 @@ export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavPro
       {/* League switcher */}
       <div className="px-4 py-4 border-t border-border">
         <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-secondary/50 text-secondary-foreground">
-          <span className="text-sm font-medium truncate">{leagueName}</span>
+          <span className="text-sm font-medium truncate">{leagueSwitcherLabel}</span>
           <ChevronDown className="h-4 w-4 opacity-50" />
         </div>
       </div>
@@ -202,7 +237,7 @@ export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavPro
         </nav>
         <div className="px-4 py-4 border-t border-border">
           <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-secondary/50 text-secondary-foreground">
-            <span className="text-sm font-medium truncate">{leagueName}</span>
+            <span className="text-sm font-medium truncate">{leagueSwitcherLabel}</span>
             <ChevronDown className="h-4 w-4 opacity-50" />
           </div>
         </div>

@@ -42,7 +42,7 @@ export default async function AppShell({
           {children}
         </main>
         <footer className="border-t border-border px-4 py-5 text-center text-xs text-muted-foreground">
-          The Commissioner · Phase 1
+          The Commissioner
         </footer>
       </div>
     </div>

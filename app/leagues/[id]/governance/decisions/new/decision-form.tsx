@@ -5,6 +5,11 @@ import { useRouter } from 'next/navigation'
 import { Link2 } from 'lucide-react'
 import { recordDecision } from '@/app/actions/governance'
 import type { PollOptionChoice } from '@/src/lib/governance'
+import { Field } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { FormMessage } from '@/components/ui/form-message'
+import { SubmitButton } from '@/components/ui/submit-button'
 
 const MAX_TITLE = 200
 const MAX_DESCRIPTION = 5000
@@ -21,8 +26,16 @@ const MAX_OUTCOME = 500
  *
  * Field limits mirror `recordDecision`'s own validation. All three of title,
  * description and outcome are required by the action, so the form requires
- * them too.
+ * them too. Local validation renders per-field; server failures render as
+ * one banner before the actions.
  */
+type FieldKey = 'title' | 'description' | 'outcome'
+
+interface FormError {
+  message: string
+  field?: FieldKey
+}
+
 export default function DecisionForm({
   leagueId,
   polls,
@@ -35,8 +48,11 @@ export default function DecisionForm({
   const [description, setDescription] = useState('')
   const [outcome, setOutcome] = useState('')
   const [pollId, setPollId] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<FormError | null>(null)
   const [pending, startTransition] = useTransition()
+
+  const fieldError = (key: FieldKey) =>
+    error?.field === key ? error.message : null
 
   function submit() {
     setError(null)
@@ -45,27 +61,27 @@ export default function DecisionForm({
     const trimmedOutcome = outcome.trim()
 
     if (!trimmedTitle) {
-      setError('Title is required.')
+      setError({ message: 'Title is required.', field: 'title' })
       return
     }
     if (trimmedTitle.length > MAX_TITLE) {
-      setError(`Title must be at most ${MAX_TITLE} characters.`)
+      setError({ message: `Title must be at most ${MAX_TITLE} characters.`, field: 'title' })
       return
     }
     if (!trimmedDescription) {
-      setError('Description is required — what was decided and why.')
+      setError({ message: 'Description is required — what was decided and why.', field: 'description' })
       return
     }
     if (trimmedDescription.length > MAX_DESCRIPTION) {
-      setError(`Description must be at most ${MAX_DESCRIPTION} characters.`)
+      setError({ message: `Description must be at most ${MAX_DESCRIPTION} characters.`, field: 'description' })
       return
     }
     if (!trimmedOutcome) {
-      setError('Outcome is required — the verdict itself, in one line.')
+      setError({ message: 'Outcome is required — the verdict itself, in one line.', field: 'outcome' })
       return
     }
     if (trimmedOutcome.length > MAX_OUTCOME) {
-      setError(`Outcome must be at most ${MAX_OUTCOME} characters.`)
+      setError({ message: `Outcome must be at most ${MAX_OUTCOME} characters.`, field: 'outcome' })
       return
     }
 
@@ -77,7 +93,7 @@ export default function DecisionForm({
         ...(pollId ? { pollId } : {}),
       })
       if (result.error || !result.decisionId) {
-        setError(result.error ?? 'Failed to record decision.')
+        setError({ message: result.error ?? 'Failed to record decision.' })
         return
       }
       router.push(`/leagues/${leagueId}/governance/decisions`)
@@ -86,43 +102,70 @@ export default function DecisionForm({
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6">
-      <Field label="Title" hint={`${title.length}/${MAX_TITLE}`}>
-        <input
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        submit()
+      }}
+      className="mx-auto w-full max-w-2xl space-y-6"
+    >
+      <Field
+        label="Title"
+        htmlFor="decision-title"
+        hint={`${title.length}/${MAX_TITLE} characters`}
+        error={fieldError('title')}
+      >
+        <Input
+          id="decision-title"
           type="text"
           value={title}
           maxLength={MAX_TITLE}
+          disabled={pending}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Trade deadline moves to Week 9"
-          className={INPUT_CLASS}
+          aria-invalid={fieldError('title') ? true : undefined}
         />
       </Field>
 
-      <Field label="Description" hint={`${description.length}/${MAX_DESCRIPTION}`}>
-        <textarea
+      <Field
+        label="Description"
+        htmlFor="decision-description"
+        hint={`What was decided, and why. ${description.length}/${MAX_DESCRIPTION} characters.`}
+        error={fieldError('description')}
+      >
+        <Textarea
+          id="decision-description"
           value={description}
           maxLength={MAX_DESCRIPTION}
           rows={5}
+          disabled={pending}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="What was decided, and the reasoning behind it."
-          className={`${INPUT_CLASS} resize-y`}
+          aria-invalid={fieldError('description') ? true : undefined}
         />
       </Field>
 
-      <Field label="Outcome" hint={`${outcome.length}/${MAX_OUTCOME}`}>
-        <textarea
+      <Field
+        label="Outcome"
+        htmlFor="decision-outcome"
+        hint={`The verdict itself, in one line. ${outcome.length}/${MAX_OUTCOME} characters.`}
+        error={fieldError('outcome')}
+      >
+        <Textarea
+          id="decision-outcome"
           value={outcome}
           maxLength={MAX_OUTCOME}
           rows={2}
+          disabled={pending}
           onChange={(e) => setOutcome(e.target.value)}
           placeholder="Approved 8–1. Effective immediately."
-          className={`${INPUT_CLASS} resize-y`}
+          aria-invalid={fieldError('outcome') ? true : undefined}
         />
       </Field>
 
       <Field
         label="Linked poll"
-        hint="Optional"
+        hint="Optional — link the ballot this decision resolves."
       >
         <div className="space-y-2">
           <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-card px-4 py-3 transition-colors hover:bg-accent/50">
@@ -131,9 +174,10 @@ export default function DecisionForm({
               name="poll"
               checked={pollId === ''}
               onChange={() => setPollId('')}
-              className="mt-0.5 h-4 w-4 accent-[var(--primary)]"
+              disabled={pending}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--primary)]"
             />
-            <span className="text-sm text-foreground">
+            <span className="min-w-0 text-sm text-foreground">
               Not from a vote
               <span className="mt-0.5 block text-xs text-muted-foreground">
                 A ruling the commissioner made directly.
@@ -155,7 +199,8 @@ export default function DecisionForm({
                 name="poll"
                 checked={pollId === poll.id}
                 onChange={() => setPollId(poll.id)}
-                className="mt-0.5 h-4 w-4 accent-[var(--primary)]"
+                disabled={pending}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--primary)]"
               />
               <span className="flex min-w-0 items-start gap-2 text-sm text-foreground">
                 <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -172,55 +217,19 @@ export default function DecisionForm({
         </div>
       </Field>
 
-      {error && (
-        <p
-          role="alert"
-          className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-        >
-          {error}
-        </p>
-      )}
+      {error && !error.field && <FormMessage>{error.message}</FormMessage>}
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-        <button
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        <SubmitButton
           type="button"
+          variant="outline"
+          disabled={pending}
           onClick={() => router.push(`/leagues/${leagueId}/governance/decisions`)}
-          className="inline-flex items-center justify-center rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
         >
           Cancel
-        </button>
-        <button
-          type="button"
-          onClick={submit}
-          disabled={pending}
-          className="inline-flex items-center justify-center rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {pending ? 'Recording…' : 'Record decision'}
-        </button>
+        </SubmitButton>
+        <SubmitButton loading={pending}>Record decision</SubmitButton>
       </div>
-    </div>
-  )
-}
-
-const INPUT_CLASS =
-  'w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary'
-
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string
-  hint?: string
-  children: React.ReactNode
-}) {
-  return (
-    <div>
-      <div className="mb-2 flex items-baseline justify-between gap-3">
-        <label className="text-sm font-semibold text-foreground">{label}</label>
-        {hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
-      </div>
-      {children}
-    </div>
+    </form>
   )
 }

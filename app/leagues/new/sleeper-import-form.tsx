@@ -3,6 +3,10 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { previewSleeperLeague } from '@/app/actions/integrations'
+import { Field } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { FormMessage } from '@/components/ui/form-message'
+import { SubmitButton } from '@/components/ui/submit-button'
 import { Zap } from 'lucide-react'
 
 /**
@@ -60,14 +64,14 @@ export default function SleeperImportForm() {
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
+    <div className="rounded-2xl border border-border bg-card p-6 shadow-lg sm:p-8">
       <div className="mb-2 flex items-center gap-3">
         <span className="rounded-md bg-primary px-2 py-0.5 text-xs font-semibold uppercase tracking-widest text-primary-foreground">
           Recommended
         </span>
       </div>
       <div className="mb-6 flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-orange-500">
           <Zap className="h-6 w-6 text-white" />
         </div>
         <h2 className="text-xl font-bold tracking-tight text-foreground">
@@ -80,15 +84,21 @@ export default function SleeperImportForm() {
         commissioner desk.
       </p>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div>
-          <label
-            htmlFor="sleeperLeagueId"
-            className="mb-2 block text-sm font-medium text-foreground"
-          >
-            Sleeper league ID
-          </label>
-          <input
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <Field
+          label="Sleeper league ID"
+          htmlFor="sleeperLeagueId"
+          hint={
+            <>
+              Find this in your Sleeper league URL — e.g.{''}
+              <code className="break-all rounded bg-muted px-1 py-0.5 text-xs">
+                sleeper.com/league/289646328504385536
+              </code>
+              . Pasting the whole URL works too.
+            </>
+          }
+        >
+          <Input
             id="sleeperLeagueId"
             name="sleeperLeagueId"
             type="text"
@@ -99,34 +109,15 @@ export default function SleeperImportForm() {
             placeholder="289646328504385536"
             required
             disabled={loading}
-            aria-describedby="sleeper-help"
-            className="w-full rounded-lg border border-input bg-transparent px-4 py-3 font-mono text-sm text-foreground placeholder:text-muted-foreground/70 focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:opacity-50"
+            className="font-mono"
           />
-          <p id="sleeper-help" className="mt-2 text-xs text-muted-foreground">
-            Find this in your Sleeper league URL — e.g.{' '}
-            <code className="rounded bg-muted px-1 py-0.5 text-xs">
-              sleeper.com/league/289646328504385536
-            </code>
-            . Pasting the whole URL works too.
-          </p>
-        </div>
+        </Field>
 
-        {error && (
-          <p
-            role="alert"
-            className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
-          >
-            {error}
-          </p>
-        )}
+        <FormMessage>{error}</FormMessage>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-lg bg-primary px-4 py-3 text-base font-medium text-primary-foreground hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50"
-        >
-          {loading ? 'Looking up your league…' : 'Import from Sleeper'}
-        </button>
+        <SubmitButton loading={loading} className="w-full py-3 text-base">
+          Import from Sleeper
+        </SubmitButton>
       </form>
     </div>
   )
