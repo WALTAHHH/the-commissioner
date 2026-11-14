@@ -1,6 +1,7 @@
 import { createClient } from '@/src/utils/supabase/server'
 import { notFound, redirect } from 'next/navigation'
-import { loadLeagueContext } from '@/src/lib/dashboard'
+import Link from 'next/link'
+import { loadLeagueContext, resolveSeason } from '@/src/lib/dashboard'
 import { prettifyLabel, formatDate } from '@/src/lib/display'
 import { Settings, Trophy, Users, Hash, Calendar, Mail, Globe } from 'lucide-react'
 import { db } from '@/src/lib/db'
@@ -39,6 +40,8 @@ export default async function LeagueSettingsPage({ params }: { params: Promise<{
     .eq('id', id)
     .maybeSingle()
   const league = leagueData as unknown as LeagueRow
+
+  const season = await resolveSeason(id)
 
   const fields = [
     {
@@ -116,6 +119,33 @@ export default async function LeagueSettingsPage({ params }: { params: Promise<{
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Season rollover */}
+      <div className="rounded-2xl border border-border bg-card p-6">
+        <div className="mb-4 flex items-center gap-2">
+          <Calendar className="h-5 w-5" />
+          <h3 className="text-xl font-semibold text-foreground">Season</h3>
+        </div>
+        <p className="mb-2 text-sm text-muted-foreground">
+          Current season year.
+        </p>
+        <div className="flex items-baseline gap-2">
+          <span className="text-3xl font-bold text-foreground">{season.seasonYear}</span>
+          <span className="text-sm text-muted-foreground">
+            ({season.source === 'current' ? 'flagged as current' : season.source === 'latest' ? 'most recent season' : 'no season recorded yet'})
+          </span>
+        </div>
+        {ctx.isCommissioner && (
+          <div className="mt-6">
+            <Link
+              href={`/leagues/${id}/settings/rollover`}
+              className="inline-flex items-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Start new season
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* Financial settings */}
