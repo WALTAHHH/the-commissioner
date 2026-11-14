@@ -5,6 +5,7 @@ import { loadLeagueContext } from '@/src/lib/dashboard'
 import { isUuid } from '@/src/lib/invitations'
 import { formatDate, prettifyLabel } from '@/src/lib/display'
 import { getProviderConnection } from '@/src/lib/integrations/connections'
+import { getMyESPNRoleForViewer } from '@/src/lib/integrations/espn/mapping'
 import { fetchESPNConnectionSnapshot } from '@/src/lib/integrations/espn/snapshot'
 import ConnectESPNForm from './connect-espn-form'
 import SyncNowButton from '../sleeper/sync-now-button'
@@ -81,6 +82,15 @@ export default async function ESPNConnectionPage({
   const snapshot = isConnected || authRequired
     ? await fetchESPNConnectionSnapshot(connection!.id)
     : null
+
+  // Informational only: the viewer's role *on ESPN*, read from the snapshot the
+  // last sync already stored (no live call, no sync triggered). The ESPN user id
+  // we match on is the connection's stored SWID — the account that connected the
+  // league — so `getMyESPNRoleForViewer` reports it only to that viewer and
+  // returns null for everyone else; the field is then simply omitted. Our own
+  // roles and permissions are never touched, and no cookie value leaves the
+  // server.
+  const espnRole = isConnected ? await getMyESPNRoleForViewer(id, user.id) : null
 
   return (
     <div className="space-y-8">
@@ -184,6 +194,17 @@ export default async function ESPNConnectionPage({
                     </dd>
                   </div>
                 </dl>
+
+                {espnRole && (
+                  <p className="mt-6 text-sm text-muted-foreground">
+                    Your ESPN role:{' '}
+                    <span className="font-medium text-foreground">{espnRole}</span>
+                    <span className="ml-2 text-xs">
+                      From the last ESPN sync — informational only, your role in
+                      The Commissioner is unchanged.
+                    </span>
+                  </p>
+                )}
               </>
             ) : (
               /* Details unavailable — keep the raw connection visible so
