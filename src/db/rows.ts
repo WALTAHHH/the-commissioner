@@ -155,10 +155,21 @@ export type PrizeStructureRow = {
   id: string
   league_id: string
   season_year: number
-  place: number
+  /** NULL for weekly prizes and season recognitions (migration 0011). */
+  place: number | null
   description: string
-  /** numeric(12,2) — see FinancialObligationRow note. */
-  amount: number | string
+  /** numeric(12,2) dollars — see FinancialObligationRow note. NULL for recognition. */
+  amount: number | string | null
+  /** 'payout' | 'recognition' (see PRIZE_TYPES). */
+  type: string
+  /** 'season' | 'weekly' (see PRIZE_SCOPES). */
+  scope: string
+  /** Week number for weekly prizes; NULL for season prizes. */
+  week_number: number | null
+  /** league_members.id of the winner; NULL until awarded. */
+  winner_member_id: string | null
+  /** ISO-8601 over PostgREST; NULL until awarded. */
+  awarded_at: string | null
   created_by: string
   created_at: string
 }

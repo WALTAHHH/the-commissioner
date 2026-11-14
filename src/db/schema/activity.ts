@@ -33,6 +33,10 @@ export const ACTIVITY_EVENT_TYPES = [
   // Money (emitted by future obligation/payment actions)
   'obligation_created',
   'payment_recorded',
+  // Prizes (emitted by prize definition/award actions)
+  'prize_created',
+  'prize_awarded',
+  'prize_deleted',
   // Invitations
   'invitation_created',
   // League lifecycle
