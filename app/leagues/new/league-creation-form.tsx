@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createLeague } from '@/app/actions/leagues'
+import { createLeague, type CreateLeagueESPNInput } from '@/app/actions/leagues'
 import { connectSleeper } from '@/app/actions/integrations'
 import { SPORT_OPTIONS, FORMAT_OPTIONS } from '@/src/lib/league-options'
 import { Trophy, Users, Hash, CheckCircle, Loader2 } from 'lucide-react'
@@ -57,6 +57,35 @@ interface LeagueCreationFormProps {
   imported?: ImportedInfo
 }
 
+/**
+ * ESPN params carried into this page through the URL — the same import-first
+ * handoff style the Sleeper flow uses (`?sleeperLeagueId=…`), e.g.
+ * `/leagues/new?espnLeagueId=1241838&espnSeasonYear=2026`. Cookie values for
+ * private leagues may ride along (`?espnS2=…&swid=…`).
+ *
+ * Read from `window.location` in the submit handler (not `useSearchParams`)
+ * per the src/lib/auth-return.ts precedent: keeps this a plain client
+ * component without a Suspense boundary.
+ */
+function espnParamsFromUrl(): CreateLeagueESPNInput | undefined {
+  const search = new URLSearchParams(window.location.search)
+  const espnLeagueId = (search.get('espnLeagueId') ?? '').trim()
+  if (!espnLeagueId) return undefined
+
+  // Blank optional params stay undefined — connectESPN treats a missing
+  // season as "this year" and requires BOTH cookies or neither.
+  const espnSeasonYear = (search.get('espnSeasonYear') ?? '').trim()
+  const espnS2 = (search.get('espnS2') ?? '').trim()
+  const swid = (search.get('swid') ?? '').trim()
+
+  return {
+    espnLeagueId,
+    espnSeasonYear: espnSeasonYear || undefined,
+    espnS2: espnS2 || undefined,
+    swid: swid || undefined,
+  }
+}
+
 export default function LeagueCreationForm({
   initialValues = { name: '', sport: '', format: '', season: '' },
   imported,
@@ -71,7 +100,10 @@ export default function LeagueCreationForm({
     setLoading(true)
 
     const formData = new FormData(e.currentTarget)
-    const result = await createLeague(formData)
+    // ESPN handoff (if any) lives in the URL, not the form fields — the
+    // server action chains connectESPN after the league row is created.
+    const espn = espnParamsFromUrl()
+    const result = await createLeague(formData, espn)
     if (result.error || !result.leagueId) {
       setError(result.error ?? 'Something went wrong.')
       setLoading(false)
@@ -88,6 +120,13 @@ export default function LeagueCreationForm({
       if (connection.error) {
         console.warn('League created, but Sleeper connect failed:', connection.error)
       }
+    }
+    // Same policy for ESPN: createLeague already attempted connectESPN and
+    // reported any failure via espnError. Do not retry here (a second
+    // createLeague would double-create the league) — just redirect; ESPN can
+    // be connected from the integrations hub.
+    if (result.espnError) {
+      console.warn('League created, but ESPN connect failed:', result.espnError)
     }
 
     router.push(`/leagues/${result.leagueId}`)

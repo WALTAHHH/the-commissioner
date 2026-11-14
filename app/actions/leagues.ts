@@ -4,6 +4,7 @@ import { db } from '@/src/lib/db'
 import { createClient } from '@/src/utils/supabase/server'
 import { slugify, randomSuffix } from '@/src/lib/slug'
 import { recordActivity } from '@/src/lib/activity'
+import { connectESPN } from '@/app/actions/integrations'
 import {
   DEFAULT_SPORT,
   DEFAULT_FORMAT,
@@ -15,6 +16,29 @@ import type { LeagueRow } from '@/src/db/rows'
 export interface CreateLeagueResult {
   leagueId?: string
   error?: string
+  /**
+   * Set only when the league WAS created but the optional ESPN connection
+   * failed (invalid id, cookies rejected, already claimed elsewhere…). The
+   * caller must not retry creation — the connection can be redone from the
+   * league's integrations hub. Mirrors how the create form treats a failed
+   * Sleeper connect after the league row is committed.
+   */
+  espnError?: string
+}
+
+/**
+ * ESPN params carried from the create flow (e.g. `/leagues/new?...&espnLeagueId=…`
+ * handed off by an ESPN import step). When `espnLeagueId` is present the league
+ * is additionally connected to that ESPN league after it is created.
+ */
+export interface CreateLeagueESPNInput {
+  espnLeagueId: string
+  /** 4-digit ESPN season; blank/absent means "this year" (connectESPN defaults). */
+  espnSeasonYear?: string
+  /** `espn_s2` cookie value — private leagues only. */
+  espnS2?: string
+  /** `SWID` cookie value — private leagues only. */
+  swid?: string
 }
 
 const MAX_SLUG_ATTEMPTS = 5
@@ -43,9 +67,16 @@ function isUniqueViolation(error: unknown): boolean {
  * Inserts the league row with the current user as commissioner, auto-generates
  * a URL-safe slug from the name (with a random suffix on collision).
  * Returns the new league's id so the caller can redirect to /leagues/[id].
+ *
+ * When `espn` carries an `espnLeagueId`, the freshly created league is also
+ * connected to that ESPN league via `connectESPN` (same verification, claim
+ * checks and cookie rules as the integrations-hub connect form). A failed
+ * connection does NOT fail the creation — the league is already committed and
+ * usable; the reason comes back as `espnError`.
  */
 export async function createLeague(
-  formData: FormData
+  formData: FormData,
+  espn?: CreateLeagueESPNInput
 ): Promise<CreateLeagueResult> {
   // 1. Auth — a league must have a commissioner.
   const supabase = await createClient()
@@ -122,7 +153,31 @@ export async function createLeague(
       { slug, sport, format },
     )
 
-    return { leagueId: leagueId as string }
+    const createdLeagueId = leagueId as string
+
+    // 4. Optional ESPN connection (create-flow handoff). Same policy as the
+    //    Sleeper connect in the create form: the league row is already
+    //    committed, so a failed ESPN connect never un-creates the league —
+    //    it surfaces as espnError and can be retried from the integrations
+    //    hub. connectESPN does its own auth + commissioner + validation.
+    const espnLeagueId = espn?.espnLeagueId?.trim() ?? ''
+    if (espnLeagueId) {
+      const connection = await connectESPN(createdLeagueId, {
+        espnLeagueId,
+        seasonYear: espn?.espnSeasonYear?.trim() ?? '',
+        espnS2: espn?.espnS2,
+        swid: espn?.swid,
+      })
+      if (connection.error) {
+        console.warn(
+          'createLeague: league created but ESPN connect failed:',
+          connection.error,
+        )
+        return { leagueId: createdLeagueId, espnError: connection.error }
+      }
+    }
+
+    return { leagueId: createdLeagueId }
   }
 
   console.error('createLeague failed', lastError)
