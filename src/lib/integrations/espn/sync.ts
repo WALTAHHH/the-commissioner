@@ -1,6 +1,7 @@
 import { db } from '../../db'
 import { ESPNAdapter, ESPNAuthRequiredError } from './adapter'
-import { resolveCookies } from './snapshot'
+import { normalizeESPNUserId } from './mapping'
+import { resolveCookies, type ESPNNormalizedCookies } from './snapshot'
 
 /**
  * Sync an ESPN league connection.
@@ -84,7 +85,17 @@ export async function syncESPNLeague(connectionId: string): Promise<string> {
       seasonYear,
       league.scoringPeriodId,
     );
-    rawSnapshot = { league, members, rosters, matchups };
+    // 3b. Private leagues only: ESPN's `view=fll` is the sole FFL view that
+    //     carries the per-member `isLeagueManager` flag, and it is
+    //     caller-scoped — ESPN resolves it from the session behind the
+    //     espn_s2/SWID cookies, so it answers "what am I in THIS league" for
+    //     the connecting account. Store it so the UI can render the role from
+    //     the snapshot without a second round-trip.
+    let myRole: 'Commissioner' | 'Member' | null = null;
+    if (cookies) {
+      myRole = await fetchESPNMyRole(cookies, leagueIdNumber, seasonYear);
+    }
+    rawSnapshot = { league, members, rosters, matchups, myRole };
 
     // 4. Bump last_synced_at, and adopt the season ESPN reports when we had to
     //    guess it (rows written before the season_year column existed).
@@ -156,5 +167,71 @@ export async function syncESPNLeague(connectionId: string): Promise<string> {
     }
 
     throw err;
+  }
+}
+
+/** Same host + browser UA the ESPN adapter uses for every read. */
+const ESPN_FFL_READS_URL = 'https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl';
+const ESPN_FLL_TIMEOUT_MS = 10_000;
+const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+
+/**
+ * Caller-scoped role lookup for a private ESPN league.
+ *
+ * `view=fll` is the only FFL view that sends `members[].isLeagueManager`, and
+ * it is resolved from the authenticated session behind the espn_s2/SWID
+ * cookies — so the answer belongs to the connecting account, not to whoever
+ * later views the page. The views the main sync already requests (mTeam/
+ * mSettings/mRoster/mMatchup) carry no manager flag at all, which is why this
+ * extra round-trip exists.
+ *
+ * Fail-soft by contract: every failure path (network, timeout, non-2xx,
+ * rejected cookies, undecodable body, viewer not in the member list) returns
+ * null so a role probe can never turn a successful league sync into an error.
+ * The caller stores that null as `myRole` and the UI falls back to the
+ * snapshot-derived heuristics in ./mapping.ts.
+ */
+async function fetchESPNMyRole(
+  cookies: ESPNNormalizedCookies,
+  leagueId: number,
+  seasonYear: number,
+): Promise<'Commissioner' | 'Member' | null> {
+  const me = normalizeESPNUserId(cookies.swid);
+  if (!me) return null;
+
+  const url = `${ESPN_FFL_READS_URL}/seasons/${seasonYear}/segments/0/leagues/${leagueId}?view=fll`;
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': BROWSER_UA,
+        Cookie: `espn_s2=${cookies.espnS2}; SWID=${cookies.swid}`,
+      },
+      signal: AbortSignal.timeout(ESPN_FLL_TIMEOUT_MS),
+    });
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { members?: unknown };
+    const members = Array.isArray(payload?.members) ? payload.members : [];
+    for (const entry of members) {
+      const member = entry && typeof entry === 'object' && !Array.isArray(entry)
+        ? (entry as Record<string, unknown>)
+        : null;
+      if (!member || normalizeESPNUserId(member.id) !== me) continue;
+      if (member.isCoLeagueManager === true) return 'Member';
+      // Only a real boolean settles this. A payload that omits the manager
+      // flag tells us nothing — a stored null lets mapping.ts's fallback
+      // heuristics answer instead of a guessed 'Member' overriding them.
+      if (member.isLeagueManager === true || member.isCommissioner === true) {
+        return 'Commissioner';
+      }
+      return member.isLeagueManager === false || member.isCommissioner === false
+        ? 'Member'
+        : null;
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
