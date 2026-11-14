@@ -9,6 +9,7 @@ import {
   fetchSleeperSnapshot,
   type IntegrationConnectionView,
 } from '@/src/lib/integrations/connections'
+import { fetchESPNConnectionSnapshot } from '@/src/lib/integrations/espn/snapshot'
 import { Plug, ArrowRight, Plus } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
@@ -27,11 +28,14 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 const PROVIDER_LABELS: Record<string, string> = {
   sleeper: 'Sleeper',
+  espn: 'ESPN',
 }
 
 /** Where a connection card links for management; null for unsupported providers. */
 function manageHref(leagueId: string, provider: string): string | null {
-  return provider === 'sleeper' ? `/leagues/${leagueId}/integrations/sleeper` : null
+  if (provider === 'sleeper') return `/leagues/${leagueId}/integrations/sleeper`
+  if (provider === 'espn') return `/leagues/${leagueId}/integrations/espn`
+  return null
 }
 
 function lastSyncedLabel(connection: IntegrationConnectionView): string {
@@ -91,11 +95,16 @@ export default async function LeagueIntegrationsPage({
   // External league names are not stored; enrich each Sleeper connection
   // live, in parallel, best-effort.
   const snapshots = await Promise.all(
-    connections.map((connection) =>
-      connection.provider === 'sleeper'
-        ? fetchSleeperSnapshot(connection.externalLeagueId)
-        : Promise.resolve(null),
-    ),
+    connections.map(async (connection) => {
+      if (connection.provider === 'sleeper') {
+        return fetchSleeperSnapshot(connection.externalLeagueId)
+      }
+      if (connection.provider === 'espn') {
+        const snapshot = await fetchESPNConnectionSnapshot(connection.id)
+        return snapshot
+      }
+      return null
+    }),
   )
 
   return (
@@ -123,17 +132,26 @@ export default async function LeagueIntegrationsPage({
             No integrations connected yet
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Connect your Sleeper league to pull rosters, members and settings
+            Connect your Sleeper or ESPN league to pull rosters, members and settings
             into The Commissioner.
           </p>
           {ctx.isCommissioner ? (
-            <Link
-              href={`/leagues/${id}/integrations/sleeper`}
-              className="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Connect Sleeper
-            </Link>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
+              <Link
+                href={`/leagues/${id}/integrations/sleeper`}
+                className="inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Connect Sleeper
+              </Link>
+              <Link
+                href={`/leagues/${id}/integrations/espn`}
+                className="inline-flex w-full items-center justify-center rounded-lg border border-border bg-transparent px-4 py-2 text-sm font-medium text-foreground hover:border-ring/60 hover:bg-accent/40 sm:w-auto"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Connect ESPN
+              </Link>
+            </div>
           ) : (
             <p className="mt-6 text-sm text-muted-foreground">
               Only the commissioner can connect integrations.

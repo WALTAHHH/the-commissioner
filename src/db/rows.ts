@@ -105,6 +105,17 @@ export type IntegrationConnectionRow = {
   created_by: string
   created_at: string
   status: string
+  /**
+   * ESPN only: session-cookie values for a private league. SECRET — these are
+   * the commissioner's ESPN login cookies and must never leave the server.
+   * Server-only readers select them to build the adapter; no view type, page
+   * or client component may carry them (see espn/snapshot.ts, which returns
+   * only a boolean `isPrivate`).
+   */
+  espn_s2?: string | null
+  swid?: string | null
+  /** ESPN only: season the external league is bound to (see 0013 migration). */
+  season_year?: number | null
 }
 
 export type IntegrationSyncLogRow = {

@@ -24,10 +24,22 @@ export type IntegrationConnectionView = {
   id: string
   provider: string
   externalLeagueId: string
-  /** 'active' | 'disconnected' (schema default is 'active'). */
+  /** 'active' | 'disconnected' | 'auth_required' (schema default is 'active'). */
   status: string
   lastSyncedAt: Date | null
   createdAt: Date
+  /**
+   * ESPN only: season the external league is bound to (null on rows written
+   * before the season_year column, and on every Sleeper row).
+   */
+  seasonYear: number | null
+  /**
+   * ESPN only: whether the row holds session cookies for a private league.
+   * This is a *boolean on purpose* — the stored `espn_s2` / `swid` values are
+   * dropped here and never travel further than the server. Nothing downstream
+   * of this type can read a cookie.
+   */
+  hasCookies: boolean
 }
 
 export type SleeperSnapshot = {
@@ -52,11 +64,20 @@ function toView(row: IntegrationConnectionRow): IntegrationConnectionView {
     status: row.status,
     lastSyncedAt: row.last_synced_at ? new Date(row.last_synced_at) : null,
     createdAt: new Date(row.created_at),
+    seasonYear: row.season_year ?? null,
+    // Presence check only — the values themselves are deliberately not
+    // forwarded, so no page, client component or API response can render them.
+    hasCookies: Boolean(row.espn_s2 || row.swid),
   }
 }
 
+/**
+ * `espn_s2` / `swid` are selected solely so `toView` can reduce them to the
+ * `hasCookies` boolean. Any new caller must go through `toView` — never hand
+ * a raw row to a component.
+ */
 const CONNECTION_COLUMNS =
-  'id, league_id, provider, external_league_id, status, last_synced_at, created_by, created_at'
+  'id, league_id, provider, external_league_id, status, last_synced_at, created_by, created_at, season_year, espn_s2, swid'
 
 /** All connections for a league, any status, oldest first (hub page list). */
 export async function listLeagueConnections(

@@ -2,6 +2,7 @@ import {
   pgTable,
   uuid,
   text,
+  integer,
   timestamp,
   jsonb,
   uniqueIndex,
@@ -28,6 +29,13 @@ export const integrationConnections = pgTable(
     status: text('status').notNull().default('active'), // 'active' | 'disconnected'
     espnS2: text('espn_s2'), // TODO: encrypt at rest in production
     swid: text('swid'), // TODO: encrypt at rest in production
+    /**
+     * ESPN season the external league is bound to (e.g. 2026). Required by
+     * every ESPN API call — the ESPN FFL endpoint is keyed by season, so the
+     * external ID alone is not enough. Null for Sleeper connections and for
+     * ESPN rows written before ESPN-2.
+     */
+    seasonYear: integer('season_year'),
   },
   (table) => [
     uniqueIndex('integration_connections_league_provider_idx').on(
