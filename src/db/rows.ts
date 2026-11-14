@@ -25,6 +25,9 @@ export type LeagueRow = {
   commissioner_id: string
   created_at: string
   updated_at: string
+  financial_visibility: string | null
+  payment_instructions: string | null
+  currency: string | null
 }
 
 export type LeagueMemberRow = {

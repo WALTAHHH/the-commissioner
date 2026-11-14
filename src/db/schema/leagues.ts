@@ -19,6 +19,9 @@ export const leagues = pgTable('leagues', {
   commissionerId: uuid('commissioner_id').references(() => authUsers.id).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  financialVisibility: text('financial_visibility'),
+  paymentInstructions: text('payment_instructions'),
+  currency: text('currency').default('USD'),
 }, (table) => [
   uniqueIndex('leagues_slug_idx').on(table.slug),
 ]);

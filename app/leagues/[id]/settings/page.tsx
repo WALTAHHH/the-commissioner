@@ -3,6 +3,9 @@ import { notFound, redirect } from 'next/navigation'
 import { loadLeagueContext } from '@/src/lib/dashboard'
 import { prettifyLabel, formatDate } from '@/src/lib/display'
 import { Settings, Trophy, Users, Hash, Calendar, Mail, Globe } from 'lucide-react'
+import { db } from '@/src/lib/db'
+import { updateLeagueFinancials } from '@/app/actions/leagues'
+import type { LeagueRow } from '@/src/db/rows'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,6 +32,13 @@ export default async function LeagueSettingsPage({ params }: { params: Promise<{
 
   const ctx = await loadLeagueContext(id, user.id)
   if (!ctx) notFound()
+
+  const { data: leagueData } = await db
+    .from('leagues')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle()
+  const league = leagueData as unknown as LeagueRow
 
   const fields = [
     {
@@ -106,6 +116,88 @@ export default async function LeagueSettingsPage({ params }: { params: Promise<{
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Financial settings */}
+      <div className="rounded-2xl border border-border bg-card p-8">
+        <h3 className="mb-4 text-xl font-semibold text-foreground">
+          Financial settings
+        </h3>
+        <form
+          action={async (formData: FormData) => {
+            'use server'
+            const leagueId = formData.get('leagueId') as string
+            const financialVisibility = formData.get('financialVisibility') as string
+            const paymentInstructions = formData.get('paymentInstructions') as string
+            const currency = formData.get('currency') as string
+            const { revalidatePath } = await import('next/cache')
+            await updateLeagueFinancials(leagueId, {
+              financialVisibility,
+              paymentInstructions,
+              currency,
+            })
+            revalidatePath(`/leagues/${leagueId}/settings`)
+          }}
+          className="space-y-4"
+        >
+          <input type="hidden" name="leagueId" value={league.id} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="financialVisibility" className="mb-1 block text-sm font-medium text-foreground">
+                Financial visibility
+              </label>
+              <select
+                id="financialVisibility"
+                name="financialVisibility"
+                defaultValue={league.financial_visibility ?? 'full_transparency'}
+                disabled={!ctx.isCommissioner}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="full_transparency">Full transparency</option>
+                <option value="admin_only">Admin only</option>
+                <option value="members_see_own">Members see own</option>
+                <option value="role_based">Role-based</option>
+              </select>
+            </div>
+            <div>
+              <label htmlFor="currency" className="mb-1 block text-sm font-medium text-foreground">
+                Default currency
+              </label>
+              <input
+                id="currency"
+                name="currency"
+                type="text"
+                defaultValue={league.currency ?? 'USD'}
+                disabled={!ctx.isCommissioner}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="paymentInstructions" className="mb-1 block text-sm font-medium text-foreground">
+                Default payment instructions
+              </label>
+              <textarea
+                id="paymentInstructions"
+                name="paymentInstructions"
+                rows={3}
+                defaultValue={league.payment_instructions ?? ''}
+                disabled={!ctx.isCommissioner}
+                placeholder="e.g. Send dues to @waltahhh on Venmo"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+          </div>
+          {ctx.isCommissioner && (
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Save financial settings
+              </button>
+            </div>
+          )}
+        </form>
       </div>
 
       {/* Notice */}
