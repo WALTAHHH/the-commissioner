@@ -1,5 +1,6 @@
-import { db } from '../../db';
-import { ESPNAdapter, ESPNAuthRequiredError } from './adapter';
+import { db } from '../../db'
+import { ESPNAdapter, ESPNAuthRequiredError } from './adapter'
+import { resolveCookies } from './snapshot'
 
 /**
  * Sync an ESPN league connection.
@@ -13,6 +14,13 @@ import { ESPNAdapter, ESPNAuthRequiredError } from './adapter';
  *  6. If `ESPNAuthRequiredError` → update connection status to 'auth_required', surfaces error.
  *
  * Uses the Supabase JS client only (`db` from src/lib/db.ts, service-role).
+ *
+ * Season handling: the ESPN FFL endpoint is keyed by season
+ * (`/seasons/{year}/segments/0/leagues/{id}`), so a sync needs a year. It comes
+ * from `integration_connections.season_year` (written by ESPN-2's connectESPN);
+ * rows predating that column fall back to the current calendar year and the
+ * real value ESPN reports is backfilled onto the row on the first successful
+ * sync, so a later season rollover still self-corrects.
  *
  * @returns the id of the `integration_sync_log` row that was written.
  */
@@ -36,30 +44,59 @@ export async function syncESPNLeague(connectionId: string): Promise<string> {
     );
   }
 
-  const externalLeagueId = String(connection.external_league_id);
-  const cookies = connection.espn_s2 && connection.swid
-    ? { espnS2: connection.espn_s2, swid: connection.swid }
-    : undefined;
+  // ESPN league IDs are numeric in the API path; a non-numeric value can only
+  // come from a row written outside connectESPN, so fail before the round-trip.
+  const leagueIdNumber = Number(String(connection.external_league_id).trim());
+  if (!Number.isInteger(leagueIdNumber) || leagueIdNumber <= 0) {
+    throw new Error(
+      `Connection ${connectionId} has a non-numeric ESPN league ID: '${String(connection.external_league_id)}'`,
+    );
+  }
+
+  const seasonYear: number =
+    typeof connection.season_year === 'number' && connection.season_year > 0
+      ? connection.season_year
+      : new Date().getFullYear();
+
+  // Cookie columns are stored bare; normalizeCookieValue keeps a quoted or
+  // "NAME="-prefixed legacy paste from breaking the Cookie header.
+  const cookies = resolveCookies({
+    espnS2: connection.espn_s2 as string | null | undefined,
+    swid: connection.swid as string | null | undefined,
+  }).cookies;
 
   let rawSnapshot: unknown = null;
 
   try {
     // 2. Instantiate adapter with cookies if available.
-    const adapter = new ESPNAdapter(cookies);
+    const adapter = new ESPNAdapter(cookies ? { ...cookies } : {});
 
-    // 3. Fetch all endpoints from ESPN in parallel.
-    const [league, members, rosters, matchups] = await Promise.all([
-      adapter.getLeague(externalLeagueId),
-      adapter.getMembers(externalLeagueId),
-      adapter.getRosters(externalLeagueId),
-      adapter.getCurrentWeekMatchups(externalLeagueId),
+    // 3. Fetch league + members + rosters in parallel. Matchups need the
+    //    league's current scoring period, so they follow the league read —
+    //    getMatchups without a period filter returns the whole season.
+    const [league, members, rosters] = await Promise.all([
+      adapter.getLeague(leagueIdNumber, seasonYear),
+      adapter.getMembers(leagueIdNumber, seasonYear),
+      adapter.getRosters(leagueIdNumber, seasonYear),
     ]);
+    const matchups = await adapter.getMatchups(
+      leagueIdNumber,
+      seasonYear,
+      league.scoringPeriodId,
+    );
     rawSnapshot = { league, members, rosters, matchups };
 
-    // 4. Bump last_synced_at.
+    // 4. Bump last_synced_at, and adopt the season ESPN reports when we had to
+    //    guess it (rows written before the season_year column existed).
+    const updates: Record<string, unknown> = {
+      last_synced_at: new Date().toISOString(),
+    };
+    if (connection.season_year !== league.seasonYear) {
+      updates.season_year = league.seasonYear;
+    }
     const { error: updateError } = await db
       .from('integration_connections')
-      .update({ last_synced_at: new Date().toISOString() })
+      .update(updates)
       .eq('id', connectionId);
 
     if (updateError) {
