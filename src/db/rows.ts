@@ -252,6 +252,27 @@ export type SeasonRecapRow = {
   updated_at: string
 }
 
+export type AnnouncementRow = {
+  id: string
+  league_id: string
+  created_by: string
+  title: string
+  body: string
+  is_pinned: boolean
+  created_at: string
+  updated_at: string
+  /** Soft delete; every read path filters `.is('deleted_at', null)`. */
+  deleted_at: string | null
+}
+
+export type AnnouncementReadRow = {
+  id: string
+  announcement_id: string
+  /** References league_members.id, same convention as poll_votes.member_id. */
+  member_id: string
+  read_at: string
+}
+
 /** The subset of `auth.users` we can reach: GoTrue admin API, not PostgREST. */
 export type UserIdentityRow = {
   id: string
