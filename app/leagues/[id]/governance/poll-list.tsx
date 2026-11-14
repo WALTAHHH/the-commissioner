@@ -34,9 +34,12 @@ export default function PollList({
 }) {
   if (polls.length === 0) {
     return (
-      <p className="rounded-xl border border-dashed border-border bg-card/50 px-4 py-6 text-center text-sm text-muted-foreground">
-        {emptyLabel}
-      </p>
+      <div className="rounded-2xl border border-dashed border-border bg-card/50 px-4 py-10 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+          <Vote className="h-6 w-6 text-muted-foreground" />
+        </div>
+        <p className="mt-4 text-sm font-medium text-foreground">{emptyLabel}</p>
+      </div>
     )
   }
 

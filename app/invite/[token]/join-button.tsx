@@ -43,25 +43,25 @@ export default function JoinLeagueButton({
 
   if (joined) {
     return (
-      <div className="rounded-2xl border border-green-200 bg-green-50 p-6 dark:border-green-800 dark:bg-green-900/20">
+      <div className="rounded-2xl border border-success/30 bg-success/10 p-6">
         <div className="mb-4 flex items-center gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-950">
-            <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-success/10">
+            <CheckCircle className="h-6 w-6 text-success" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-green-800 dark:text-green-300">
+            <h3 className="text-lg font-semibold text-success">
               {joined.alreadyMember
                 ? `You were already a member of ${joined.leagueName}.`
                 : `You're in. Welcome to ${joined.leagueName}.`}
             </h3>
-            <p className="mt-1 text-sm text-green-700 dark:text-green-400">
+            <p className="mt-1 text-sm text-muted-foreground">
               You can now access the league dashboard.
             </p>
           </div>
         </div>
         <Link
           href={`/leagues/${joined.leagueId}`}
-          className="block w-full rounded-lg bg-green-600 px-4 py-3 text-center text-base font-medium text-green-50 hover:bg-green-700"
+          className="block w-full rounded-lg bg-primary px-4 py-3 text-center text-base font-medium text-primary-foreground hover:bg-primary/90"
         >
           Go to your league
         </Link>

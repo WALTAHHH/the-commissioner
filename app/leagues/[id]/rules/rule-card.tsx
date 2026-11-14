@@ -95,7 +95,7 @@ export default function RuleCard({
               {rule.title}
             </h3>
             {isCommissioner && !rule.isPublished && (
-              <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 dark:border-amber-800/70 dark:bg-amber-900/30 dark:text-amber-300">
+              <span className="rounded-md border border-warning/30 bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">
                 Draft
               </span>
             )}
