@@ -37,6 +37,10 @@ export const ACTIVITY_EVENT_TYPES = [
   // Integrations
   'integration_connected',
   'integration_synced',
+  // Announcements (emitted by announcement actions)
+  'announcement_created',
+  'announcement_updated',
+  'announcement_deleted',
   // Governance
   'poll_created',
   'vote_cast',

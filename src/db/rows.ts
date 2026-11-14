@@ -219,6 +219,25 @@ export type DisputeRow = {
   created_at: string
 }
 
+export type AnnouncementRow = {
+  id: string
+  league_id: string
+  created_by: string
+  title: string
+  body: string
+  is_pinned: boolean
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+export type AnnouncementReadRow = {
+  id: string
+  announcement_id: string
+  member_id: string
+  read_at: string
+}
+
 /** The subset of `auth.users` we can reach: GoTrue admin API, not PostgREST. */
 export type UserIdentityRow = {
   id: string
