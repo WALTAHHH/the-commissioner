@@ -235,6 +235,25 @@ export default async function LeagueIntegrationsPage({
         </div>
       )}
 
+      {ctx.isCommissioner && connections.length > 0 && (
+        <div className="flex gap-3">
+          <Link
+            href={`/leagues/${id}/integrations/sleeper`}
+            className="inline-flex items-center rounded-lg border border-border bg-transparent px-4 py-2 text-sm font-medium text-foreground hover:border-ring/60 hover:bg-accent/40"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Connect Sleeper
+          </Link>
+          <Link
+            href={`/leagues/${id}/integrations/espn`}
+            className="inline-flex items-center rounded-lg border border-border bg-transparent px-4 py-2 text-sm font-medium text-foreground hover:border-ring/60 hover:bg-accent/40"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Connect ESPN
+          </Link>
+        </div>
+      )}
+
       {!ctx.isCommissioner && connections.length > 0 && (
         <p className="text-sm text-muted-foreground">
           Read-only — only the commissioner can connect, sync or disconnect
