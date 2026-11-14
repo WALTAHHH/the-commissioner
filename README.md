@@ -38,6 +38,15 @@ DATABASE_URL=postgresql://postgres:password@db.ylqmmfzyicrcuripuejj.supabase.co:
 
 Get the `SUPABASE_SERVICE_ROLE_KEY` and database password from the Supabase dashboard (Project Settings → API). The `SUPABASE_SECRET_KEY` can be any random string (generate with `openssl rand -base64 32`).
 
+For transactional email (Resend — currently infrastructure only, nothing sends until the notification features wire it in):
+
+```
+RESEND_API_KEY=res_your-api-key
+RESEND_FROM_EMAIL="The Commissioner <notifications@yourdomain.com>"  # optional
+```
+
+`RESEND_API_KEY` comes from resend.com → API Keys and is added in Vercel by the project owner. Without `RESEND_FROM_EMAIL`, `src/lib/email.ts` falls back to Resend's sandbox address `onboarding@resend.dev` (dev-only; it cannot deliver to arbitrary recipients).
+
 ### Install Dependencies
 
 ```bash
