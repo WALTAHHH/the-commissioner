@@ -82,7 +82,7 @@ export default function RuleCard({
     startTransition(async () => {
       const result = await deleteRule(rule.id)
       if (result.error) {
-        setError(result.error)
+        setError({ message: result.error })
         setConfirmingDelete(false)
         return
       }
@@ -159,68 +159,57 @@ export default function RuleCard({
       {/* Body: read mode or inline edit */}
       {editing ? (
         <div className="mt-4 space-y-4">
-          <div>
-            <label
-              htmlFor={`rule-title-${rule.id}`}
-              className="mb-1.5 block text-sm font-medium text-foreground"
-            >
-              Title
-            </label>
-            <input
+          <Field
+            label="Title"
+            htmlFor={`rule-title-${rule.id}`}
+            error={error?.field === 'title' ? error.message : null}
+          >
+            <Input
               id={`rule-title-${rule.id}`}
               type="text"
               value={title}
               maxLength={200}
+              disabled={pending}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none"
+              aria-invalid={error?.field === 'title' ? true : undefined}
             />
-          </div>
-          <div>
-            <label
-              htmlFor={`rule-body-${rule.id}`}
-              className="mb-1.5 block text-sm font-medium text-foreground"
-            >
-              Body{' '}
-              <span className="font-normal text-muted-foreground">
-                (markdown supported)
-              </span>
-            </label>
-            <textarea
+          </Field>
+          <Field
+            label="Body"
+            htmlFor={`rule-body-${rule.id}`}
+            hint="Markdown supported."
+            error={error?.field === 'body' ? error.message : null}
+          >
+            <Textarea
               id={`rule-body-${rule.id}`}
               value={body}
               rows={8}
+              disabled={pending}
               onChange={(e) => setBody(e.target.value)}
-              className="w-full rounded-md border border-input bg-card px-3 py-2 font-mono text-sm text-foreground focus:border-ring focus:outline-none"
+              className="font-mono"
+              aria-invalid={error?.field === 'body' ? true : undefined}
             />
-          </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <div className="flex items-center gap-2">
-            <button
+          </Field>
+          {error && !error.field && <FormMessage>{error.message}</FormMessage>}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+            <SubmitButton type="button" loading={pending} onClick={save}>
+              Save changes
+            </SubmitButton>
+            <SubmitButton
               type="button"
-              onClick={save}
+              variant="outline"
               disabled={pending}
-              className="inline-flex items-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              <Check className="mr-1.5 h-4 w-4" />
-              {pending ? 'Saving…' : 'Save changes'}
-            </button>
-            <button
-              type="button"
               onClick={cancelEdit}
-              disabled={pending}
-              className="inline-flex items-center rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
             >
               Cancel
-            </button>
+            </SubmitButton>
           </div>
         </div>
       ) : (
         <MarkdownBody source={rule.body} className="mt-4" />
       )}
 
-      {!editing && error && (
-        <p className="mt-3 text-sm text-destructive">{error}</p>
-      )}
+      {!editing && error && <FormMessage className="mt-3">{error.message}</FormMessage>}
 
       {/* Version history: native disclosure, no extra fetch */}
       {!editing && versionCount > 0 && (
