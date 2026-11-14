@@ -27,6 +27,14 @@ import { db } from '@/src/lib/db'
 import { createClient } from '@/src/utils/supabase/server'
 import { authorize } from '@/src/lib/auth/authorize'
 import { recordActivity } from '@/src/lib/activity'
+import { loadPrizes, type PrizeSections } from '@/src/lib/finances'
+import { loadLeagueContext } from '@/src/lib/dashboard'
+import {
+  PRIZE_SCOPES,
+  PRIZE_TYPES,
+  type PrizeScope,
+  type PrizeType,
+} from '@/src/db/schema/finances'
 import type {
   FinancialObligationRow,
   FinancialPaymentRow,
@@ -83,6 +91,28 @@ async function requireUser() {
     data: { user },
   } = await supabase.auth.getUser()
   return user
+}
+
+/**
+ * Commissioner-of-the-league check against the leagues row itself — the same
+ * rule `src/lib/dashboard.loadLeagueContext` and the announcements/integrations
+ * actions use. The prize WRITE actions gate on this rather than `authorize()`
+ * because that helper is still the repo-wide deny-by-default stub (it returns
+ * false for every action), which would make every prize write fail unconditionally.
+ * When the permission-model workstream replaces the stub, these calls should
+ * move back to `authorize()` like the obligation actions already do.
+ */
+async function requireCommissioner(
+  userId: string,
+  leagueId: string,
+): Promise<boolean> {
+  const { data, error } = await db
+    .from('leagues')
+    .select('commissioner_id')
+    .eq('id', leagueId)
+    .maybeSingle()
+  if (error || !data) return false
+  return (data as unknown as { commissioner_id: string }).commissioner_id === userId
 }
 
 /**
@@ -977,42 +1007,112 @@ export async function getLedger(leagueId: string): Promise<GetLedgerResult> {
 }
 
 // ---------------------------------------------------------------------------
-// Prize structure (Commissioner edits; all members read via src/lib/finances)
+// Prizes (Commissioner defines + awards; all members read via src/lib/finances)
 // ---------------------------------------------------------------------------
-
-export interface SetPrizePlaceResult {
-  prizeId?: string
-  error?: string
-}
-
-export interface DeletePrizePlaceResult {
-  error?: string
-}
+//
+// A prize is one row of `prize_structure` described by two axes:
+//   scope: 'season' | 'weekly'  ×  type: 'payout' | 'recognition'
+// Payouts carry an amount and (for season payouts) a finishing place; weekly
+// prizes carry a week number instead of a place; recognitions carry no money.
+// Winners are recorded after the fact (`winner_member_id` + `awarded_at`).
+//
+// Write actions gate on `requireCommissioner`, not the `authorize()` stub (see
+// the helper above) so prize management actually works until the permission
+// model replaces the stub. Reads go through `src/lib/finances` like the rest of
+// the finances pages.
 
 const PLACE_MAX = 100
 const SEASON_YEAR_MIN = 2000
 const SEASON_YEAR_MAX = 2100
+// Weekly prizes are addressed by playoff-inclusive week number; the ceiling is
+// generous (a Sleeper season is ≤ ~23 weeks) but keeps garbage out of the field.
+const WEEK_MAX = 40
 
 function isInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value)
 }
 
+export interface CreatePrizeResult {
+  prizeId?: string
+  error?: string
+}
+
+export interface AwardPrizeResult {
+  prizeId?: string
+  obligationId?: string
+  error?: string
+}
+
+export interface GetPrizesResult {
+  sections?: PrizeSections
+  error?: string
+}
+
+export interface DeletePrizeResult {
+  error?: string
+}
+
 /**
- * Create or update a single prize place for a season. Upserts on the
- * (league_id, season_year, place) unique index — placing 1st for 2026 twice
- * updates the same row rather than erroring.
+ * Load a prize row for a mutation. The league is re-read from the row (never
+ * trusted from the caller) so a prize from another league can't be targeted by
+ * id, and the commission check runs against the owning league.
+ */
+async function loadPrizeForLeague(
+  prizeId: string,
+): Promise<PrizeStructureRow | { error: string }> {
+  const { data, error } = await db
+    .from('prize_structure')
+    .select(
+      'id, league_id, season_year, place, description, amount, type, scope, week_number, winner_member_id, awarded_at, created_by, created_at',
+    )
+    .eq('id', prizeId)
+    .maybeSingle()
+  if (error || !data) return { error: 'Prize not found.' }
+  return data as unknown as PrizeStructureRow
+}
+
+/** Verify a winner id is an active-ish membership row of THIS league. */
+async function winnerInLeague(
+  leagueId: string,
+  memberId: string,
+): Promise<boolean> {
+  const missing = await filterLeagueMembers(leagueId, [memberId])
+  return missing.length === 0
+}
+
+/**
+ * Define a prize. `scope`/`type` decide which extra fields are required:
+ *   season + payout    → place (1..100) + amount (> 0)
+ *   season + recognition → optional place, no amount
+ *   weekly + *         → weekNumber (1..40), no place
+ *   * + payout         → amount (> 0); recognition → no amount
+ * A winner may be attached at creation (recorded as awarded now) or left TBD
+ * for `awardPrize` later.
  *
  * @param leagueId uuid of the league
  */
-export async function setPrizePlace(
+export async function createPrize(
   leagueId: string,
   {
     seasonYear,
+    scope,
+    type,
     place,
-    amount,
+    weekNumber,
     description,
-  }: { seasonYear: number; place: number; amount: number; description: string },
-): Promise<SetPrizePlaceResult> {
+    amount,
+    winnerId,
+  }: {
+    seasonYear: number
+    scope: PrizeScope
+    type: PrizeType
+    place?: number | null
+    weekNumber?: number | null
+    description: string
+    amount?: number | null
+    winnerId?: string
+  },
+): Promise<CreatePrizeResult> {
   const user = await requireUser()
   if (!user) {
     return { error: 'You must be signed in.' }
@@ -1020,11 +1120,18 @@ export async function setPrizePlace(
   if (!isUuid(leagueId)) {
     return { error: 'Invalid league ID.' }
   }
-  if (!isInteger(seasonYear) || seasonYear < SEASON_YEAR_MIN || seasonYear > SEASON_YEAR_MAX) {
+  if (
+    !isInteger(seasonYear) ||
+    seasonYear < SEASON_YEAR_MIN ||
+    seasonYear > SEASON_YEAR_MAX
+  ) {
     return { error: `Season year must be between ${SEASON_YEAR_MIN} and ${SEASON_YEAR_MAX}.` }
   }
-  if (!isInteger(place) || place < 1 || place > PLACE_MAX) {
-    return { error: `Place must be a whole number between 1 and ${PLACE_MAX}.` }
+  if (!(PRIZE_SCOPES as readonly string[]).includes(scope)) {
+    return { error: 'Scope must be season or weekly.' }
+  }
+  if (!(PRIZE_TYPES as readonly string[]).includes(type)) {
+    return { error: 'Type must be payout or recognition.' }
   }
   if (typeof description !== 'string' || !description.trim()) {
     return { error: 'Description is required.' }
@@ -1032,83 +1139,224 @@ export async function setPrizePlace(
   if (description.trim().length > 500) {
     return { error: 'Description must be at most 500 characters.' }
   }
-  const amountResult = normalizeAmount(amount)
-  if (!amountResult.ok) {
-    return { error: amountResult.error }
+
+  // --- Scope-shaped fields -------------------------------------------------
+  let normalizedPlace: number | null = null
+  let normalizedWeek: number | null = null
+  if (scope === 'weekly') {
+    if (!isInteger(weekNumber ?? null) || weekNumber! < 1 || weekNumber! > WEEK_MAX) {
+      return { error: `Week number must be a whole number between 1 and ${WEEK_MAX}.` }
+    }
+    normalizedWeek = weekNumber!
+    // Weekly prizes have no finishing place.
+  } else {
+    // season
+    if (place !== undefined && place !== null) {
+      if (!isInteger(place) || place < 1 || place > PLACE_MAX) {
+        return { error: `Place must be a whole number between 1 and ${PLACE_MAX}.` }
+      }
+      normalizedPlace = place
+    }
+    // A season payout is meaningless without a place.
+    if (type === 'payout' && normalizedPlace === null) {
+      return { error: 'Season payouts need a finishing place.' }
+    }
   }
 
-  const isAuthorized = await authorize({
-    userId: user.id,
-    leagueId,
-    action: 'setPrizePlace',
-  })
-  if (!isAuthorized) {
-    return { error: 'You are not authorized to edit prizes in this league.' }
+  // --- Money ---------------------------------------------------------------
+  let normalizedAmount: number | null = null
+  if (type === 'payout') {
+    const amountResult = normalizeAmount(amount ?? NaN)
+    if (!amountResult.ok) {
+      return { error: amountResult.error }
+    }
+    normalizedAmount = amountResult.amount
+  } else {
+    // recognition: no money, ignore anything sent.
+    normalizedAmount = null
+  }
+
+  // --- Optional winner at creation ----------------------------------------
+  let winnerMemberId: string | null = null
+  if (winnerId !== undefined && winnerId !== '') {
+    if (!isUuid(winnerId)) {
+      return { error: 'Invalid winner ID.' }
+    }
+    if (!(await winnerInLeague(leagueId, winnerId))) {
+      return { error: 'Winner not found in this league.' }
+    }
+    winnerMemberId = winnerId
+  }
+
+  if (!(await requireCommissioner(user.id, leagueId))) {
+    return { error: 'You are not authorized to create prizes in this league.' }
   }
 
   const row = {
     league_id: leagueId,
     season_year: seasonYear,
-    place,
+    place: normalizedPlace,
     description: description.trim(),
-    amount: amountResult.amount,
+    amount: normalizedAmount,
+    type,
+    scope,
+    week_number: normalizedWeek,
+    winner_member_id: winnerMemberId,
+    awarded_at: winnerMemberId ? new Date().toISOString() : null,
     created_by: user.id,
   }
 
-  // Supabase upsert resolves the target row through the unique index.
   const { data, error } = await db
     .from('prize_structure')
-    .upsert(row, { onConflict: 'league_id,season_year,place' })
+    .insert(row)
     .select('id')
     .single()
 
   if (error || !data) {
-    console.error('setPrizePlace upsert error:', error)
-    return { error: 'Failed to save prize place.' }
+    console.error('createPrize insert error:', error)
+    return { error: 'Failed to create prize.' }
   }
 
-  return { prizeId: (data as unknown as { id: string }).id }
+  const prizeId = (data as unknown as { id: string }).id
+  // `normalizedAmount` is already dollars (normalizeAmount output).
+  const amountLabel =
+    normalizedAmount !== null ? ` ($${normalizedAmount.toFixed(2)})` : ''
+  await recordActivity(
+    leagueId,
+    user.id,
+    'prize_created',
+    `Prize defined: “${row.description}” (${scope} ${type})${amountLabel}`,
+    { prizeId, scope, type, amount: normalizedAmount },
+  )
+
+  return { prizeId }
 }
 
 /**
- * Delete one prize place. The league is re-read from the row (never trusted
- * from the caller) so a prize from another league cannot be targeted.
+ * Record who won a defined prize. Sets `winner_member_id` + `awarded_at` (a
+ * re-award overwrites the previous winner). For a payout prize the commissioner
+ * can ask the app to also log the money owed: `createObligation` inserts a
+ * `financial_obligation` for the prize amount against the winner (recordkeeping
+ * only — no money moves).
  *
  * @param prizeId uuid of the prize_structure row
+ * @param winnerId uuid of the league_members row that won
+ * @param createObligation whether to also book a payout obligation
  */
-export async function deletePrizePlace(
-  leagueId: string,
+export async function awardPrize(
   prizeId: string,
-): Promise<DeletePrizePlaceResult> {
+  {
+    winnerId,
+    createObligation = false,
+  }: { winnerId: string; createObligation?: boolean },
+): Promise<AwardPrizeResult> {
   const user = await requireUser()
   if (!user) {
     return { error: 'You must be signed in.' }
   }
-  if (!isUuid(leagueId) || !isUuid(prizeId)) {
+  if (!isUuid(prizeId)) {
+    return { error: 'Invalid prize ID.' }
+  }
+  if (!isUuid(winnerId)) {
+    return { error: 'Invalid winner ID.' }
+  }
+
+  const prize = await loadPrizeForLeague(prizeId)
+  if ('error' in prize) {
+    return { error: prize.error }
+  }
+
+  if (!(await requireCommissioner(user.id, prize.league_id))) {
+    return { error: 'You are not authorized to award prizes in this league.' }
+  }
+
+  if (!(await winnerInLeague(prize.league_id, winnerId))) {
+    return { error: 'Winner not found in this league.' }
+  }
+
+  const awardedAt = new Date().toISOString()
+  const { error: updateError } = await db
+    .from('prize_structure')
+    .update({ winner_member_id: winnerId, awarded_at: awardedAt })
+    .eq('id', prizeId)
+  if (updateError) {
+    console.error('awardPrize update error:', updateError)
+    return { error: 'Failed to award prize.' }
+  }
+
+  // Optionally book the payout. Recognition prizes (no amount) never create one.
+  // Both `prize_structure.amount` and `financial_obligations.amount` are
+  // numeric(12,2) DOLLARS (PostgREST may serialise as number or string) —
+  // no unit conversion, just normalisation through toNumber.
+  let obligationId: string | undefined
+  const payoutAmount =
+    prize.type === 'payout' && prize.amount !== null && prize.amount !== undefined
+      ? toNumber(prize.amount)
+      : null
+  if (createObligation) {
+    if (payoutAmount === null || !Number.isFinite(payoutAmount) || payoutAmount <= 0) {
+      // Nothing to pay: the prize was awarded, but a payout obligation makes no
+      // sense (recognition, or a payout with no amount). Skip silently rather
+      // than fail the award that already succeeded.
+    } else {
+      const { data: obligation, error: obligationError } = await db
+        .from('financial_obligations')
+        .insert({
+          league_id: prize.league_id,
+          member_id: winnerId,
+          amount: payoutAmount,
+          description: `Prize payout: ${prize.description}`,
+          created_by: user.id,
+        })
+        .select('id')
+        .single()
+      if (obligationError || !obligation) {
+        console.error('awardPrize obligation insert error:', obligationError)
+        // The prize is already awarded; report both facts so the commissioner
+        // can complete the money entry by hand if they want.
+        return {
+          prizeId,
+          error: 'The prize was awarded, but the payout obligation could not be recorded. Add it manually under Finances.',
+        }
+      }
+      obligationId = (obligation as unknown as { id: string }).id
+    }
+  }
+
+  await recordActivity(
+    prize.league_id,
+    user.id,
+    'prize_awarded',
+    `Prize awarded: “${prize.description}”${payoutAmount !== null ? ` ($${payoutAmount.toFixed(2)})` : ''}`,
+    { prizeId, winnerId, obligationId, amount: payoutAmount },
+  )
+
+  return { prizeId, obligationId }
+}
+
+/**
+ * Delete a prize. The league is re-read from the row so a prize from another
+ * league can't be targeted by id.
+ *
+ * @param prizeId uuid of the prize_structure row
+ */
+export async function deletePrize(
+  prizeId: string,
+): Promise<DeletePrizeResult> {
+  const user = await requireUser()
+  if (!user) {
+    return { error: 'You must be signed in.' }
+  }
+  if (!isUuid(prizeId)) {
     return { error: 'Invalid prize ID.' }
   }
 
-  const { data: existing, error: loadError } = await db
-    .from('prize_structure')
-    .select('id, league_id')
-    .eq('id', prizeId)
-    .maybeSingle()
-
-  if (loadError || !existing) {
-    return { error: 'Prize place not found.' }
-  }
-  const row = existing as unknown as Pick<PrizeStructureRow, 'id' | 'league_id'>
-  if (row.league_id !== leagueId) {
-    return { error: 'Prize place not found in this league.' }
+  const prize = await loadPrizeForLeague(prizeId)
+  if ('error' in prize) {
+    return { error: prize.error }
   }
 
-  const isAuthorized = await authorize({
-    userId: user.id,
-    leagueId,
-    action: 'deletePrizePlace',
-    resourceId: prizeId,
-  })
-  if (!isAuthorized) {
+  if (!(await requireCommissioner(user.id, prize.league_id))) {
     return { error: 'You are not authorized to edit prizes in this league.' }
   }
 
@@ -1118,9 +1366,45 @@ export async function deletePrizePlace(
     .eq('id', prizeId)
 
   if (error) {
-    console.error('deletePrizePlace delete error:', error)
-    return { error: 'Failed to delete prize place.' }
+    console.error('deletePrize delete error:', error)
+    return { error: 'Failed to delete prize.' }
   }
 
   return {}
 }
+
+/**
+ * All prizes for one season, grouped by scope (season/weekly) and type
+ * (payout/recognition) with resolved winner names. Read-only; the page
+ * normally calls `loadPrizes` from src/lib/finances directly, this action
+ * exists for the checklist contract and re-uses the same query path.
+ *
+ * @param leagueId uuid of the league
+ * @param seasonYear e.g. 2026
+ */
+export async function getPrizes(
+  leagueId: string,
+  seasonYear: number,
+): Promise<GetPrizesResult> {
+  const user = await requireUser()
+  if (!user) {
+    return { error: 'You must be signed in.' }
+  }
+  if (!isUuid(leagueId)) {
+    return { error: 'Invalid league ID.' }
+  }
+  if (!isInteger(seasonYear)) {
+    return { error: 'Invalid season year.' }
+  }
+
+  // Read gate: any member or the commissioner may view prizes (public league
+  // info). loadLeagueContext enforces membership and is the source the pages
+  // trust; the authorize() stub is not usable for reads.
+  const ctx = await loadLeagueContext(leagueId, user.id)
+  if (!ctx) {
+    return { error: 'You are not authorized to view prizes in this league.' }
+  }
+
+  return { sections: await loadPrizes(leagueId, seasonYear) }
+}
+
