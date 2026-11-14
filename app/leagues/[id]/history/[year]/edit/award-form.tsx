@@ -4,6 +4,12 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createAward } from '@/app/actions/history'
 import type { MemberOption } from '../../season-record-form'
+import { Field } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { FormMessage, FormSuccess } from '@/components/ui/form-message'
+import { SubmitButton } from '@/components/ui/submit-button'
 
 const MAX_AWARD_NAME = 200
 const MAX_DESCRIPTION = 1000
@@ -11,8 +17,18 @@ const MAX_DESCRIPTION = 1000
 /**
  * Add an award to a season (commissioner). Leave recipient empty for team
  * awards. Validation mirrors `createAward`; duplicate names within a season
- * are rejected by a unique index and surfaced as a friendly error.
+ * are rejected by a unique index and surfaced as a friendly server banner.
+ *
+ * This form stays mounted after a save (awards are added one after another),
+ * so success feedback is an inline FormSuccess, not a redirect.
  */
+type FieldKey = 'awardName' | 'description'
+
+interface FormError {
+  message: string
+  field?: FieldKey
+}
+
 export default function AwardForm({
   leagueId,
   seasonYear,
@@ -26,24 +42,27 @@ export default function AwardForm({
   const [awardName, setAwardName] = useState('')
   const [memberId, setMemberId] = useState('')
   const [description, setDescription] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<FormError | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
+
+  const fieldError = (key: FieldKey) =>
+    error?.field === key ? error.message : null
 
   function submit() {
     setError(null)
     setSaved(null)
     const name = awardName.trim()
     if (!name) {
-      setError('Award name is required.')
+      setError({ message: 'Award name is required.', field: 'awardName' })
       return
     }
     if (name.length > MAX_AWARD_NAME) {
-      setError(`Award name must be at most ${MAX_AWARD_NAME} characters.`)
+      setError({ message: `Award name must be at most ${MAX_AWARD_NAME} characters.`, field: 'awardName' })
       return
     }
     if (description.trim().length > MAX_DESCRIPTION) {
-      setError(`Description must be at most ${MAX_DESCRIPTION} characters.`)
+      setError({ message: `Description must be at most ${MAX_DESCRIPTION} characters.`, field: 'description' })
       return
     }
 
@@ -55,7 +74,7 @@ export default function AwardForm({
         description: description.trim() || undefined,
       })
       if (result.error) {
-        setError(result.error)
+        setError({ message: result.error })
         return
       }
       setSaved(`"${name}" added.`)
@@ -66,35 +85,40 @@ export default function AwardForm({
     })
   }
 
-  const inputClass =
-    'w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary'
-
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label htmlFor={`award-name-${seasonYear}`} className="mb-1.5 block text-sm font-medium text-foreground">
-            Award name
-          </label>
-          <input
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        submit()
+      }}
+      className="space-y-5"
+    >
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <Field
+          label="Award name"
+          htmlFor={`award-name-${seasonYear}`}
+          error={fieldError('awardName')}
+        >
+          <Input
             id={`award-name-${seasonYear}`}
             type="text"
             value={awardName}
+            maxLength={MAX_AWARD_NAME}
+            disabled={pending}
             onChange={(e) => setAwardName(e.target.value)}
             placeholder="MVP, Iron Streak, Best Record…"
-            maxLength={MAX_AWARD_NAME}
-            className={inputClass}
+            aria-invalid={fieldError('awardName') ? true : undefined}
           />
-        </div>
-        <div>
-          <label htmlFor={`award-member-${seasonYear}`} className="mb-1.5 block text-sm font-medium text-foreground">
-            Recipient
-          </label>
-          <select
+        </Field>
+        <Field
+          label="Recipient"
+          htmlFor={`award-member-${seasonYear}`}
+        >
+          <Select
             id={`award-member-${seasonYear}`}
             value={memberId}
+            disabled={pending}
             onChange={(e) => setMemberId(e.target.value)}
-            className={inputClass}
           >
             <option value="">— team award (no member) —</option>
             {members.map((m) => (
@@ -102,44 +126,31 @@ export default function AwardForm({
                 {m.label}
               </option>
             ))}
-          </select>
-        </div>
+          </Select>
+        </Field>
       </div>
 
-      <div>
-        <label htmlFor={`award-desc-${seasonYear}`} className="mb-1.5 block text-sm font-medium text-foreground">
-          Description
-        </label>
-        <textarea
+      <Field
+        label="Description"
+        htmlFor={`award-desc-${seasonYear}`}
+        hint="Why it was given (optional)."
+        error={fieldError('description')}
+      >
+        <Textarea
           id={`award-desc-${seasonYear}`}
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
           rows={2}
           maxLength={MAX_DESCRIPTION}
-          placeholder="Why it was given (optional)"
-          className={inputClass}
+          disabled={pending}
+          onChange={(e) => setDescription(e.target.value)}
+          aria-invalid={fieldError('description') ? true : undefined}
         />
-      </div>
+      </Field>
 
-      {error && (
-        <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
-      )}
-      {saved && (
-        <p className="rounded-lg border border-success/30 bg-success/5 px-3 py-2 text-sm text-success">
-          {saved}
-        </p>
-      )}
+      {error && !error.field && <FormMessage>{error.message}</FormMessage>}
+      {saved && <FormSuccess>{saved}</FormSuccess>}
 
-      <button
-        type="button"
-        onClick={submit}
-        disabled={pending}
-        className="inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 sm:w-auto"
-      >
-        {pending ? 'Adding…' : 'Add award'}
-      </button>
-    </div>
+      <SubmitButton loading={pending} className="w-full sm:w-auto">Add award</SubmitButton>
+    </form>
   )
 }

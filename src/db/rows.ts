@@ -252,6 +252,7 @@ export type SeasonRecapRow = {
   updated_at: string
 }
 
+/** announcements table (PostgREST raw column names). */
 export type AnnouncementRow = {
   id: string
   league_id: string
@@ -261,14 +262,13 @@ export type AnnouncementRow = {
   is_pinned: boolean
   created_at: string
   updated_at: string
-  /** Soft delete; every read path filters `.is('deleted_at', null)`. */
   deleted_at: string | null
 }
 
+/** announcement_reads table (PostgREST raw column names). */
 export type AnnouncementReadRow = {
   id: string
   announcement_id: string
-  /** References league_members.id, same convention as poll_votes.member_id. */
   member_id: string
   read_at: string
 }

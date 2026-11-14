@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { listUserLeagues } from '@/src/lib/dashboard'
 import { prettifyLabel, pluralizeCount } from '@/src/lib/display'
-import RoleBadge from '@/src/components/role-badge'
 import RedeemInviteForm from '@/src/components/redeem-invite-form'
 import { Sparkles, Plus, Users, Trophy } from 'lucide-react'
 
@@ -31,9 +30,7 @@ export default async function DashboardPage() {
           <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
             Your leagues
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Standings, money, rules and votes — one home per league.
-          </p>
+          
         </div>
         <Link
           href="/leagues/new"
@@ -96,14 +93,14 @@ export default async function DashboardPage() {
             {leagues.map((league) => (
               <div
                 key={league.id}
-                className="group rounded-2xl border border-border bg-card p-6 shadow-sm transition-all hover:border-primary/40 hover:shadow-md"
+                className="group rounded-2xl border border-border bg-card p-6 shadow-sm transition-all hover:border-primary/50 hover:shadow-md dark:hover:border-primary/80"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
                     <h2 className="text-xl font-semibold leading-6 text-foreground">
                       <Link
                         href={`/leagues/${league.id}`}
-                        className="hover:text-primary"
+                        className="hover:text-primary dark:hover:text-primary/80"
                       >
                         {league.name}
                       </Link>
@@ -112,9 +109,11 @@ export default async function DashboardPage() {
                       {prettifyLabel(league.sport)} · {prettifyLabel(league.format)}
                     </p>
                   </div>
-                  <RoleBadge
-                    role={league.isCommissioner ? 'commissioner' : league.role ?? 'member'}
-                  />
+                  {league.isCommissioner && (
+                    <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary dark:border-primary/30 dark:bg-primary/20 dark:text-primary/90">
+                      Commissioner
+                    </span>
+                  )}
                 </div>
                 <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
                   <Users className="h-4 w-4" />

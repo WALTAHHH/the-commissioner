@@ -108,12 +108,12 @@ export default async function LeagueMembersPage({
 
       {/* Invite box for commissioner */}
       {ctx.isCommissioner && (
-        <div className="rounded-2xl border border-primary/30 bg-primary/10 p-6">
-          <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-primary">
+        <div className="rounded-2xl border border-primary/30 bg-primary/10 p-6 dark:border-primary/30 dark:bg-primary/20">
+          <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-primary dark:text-primary/90">
             <UserPlus className="h-5 w-5" />
             Invite new members
           </h3>
-          <p className="mb-4 text-sm text-muted-foreground">
+          <p className="mb-4 text-sm text-primary/80 dark:text-primary/70">
             Create a shareable invite link (7‑day default, unlimited uses)
           </p>
           <InviteMemberButton leagueId={id} />

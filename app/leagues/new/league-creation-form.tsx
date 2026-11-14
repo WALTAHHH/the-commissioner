@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createLeague } from '@/app/actions/leagues'
 import { connectSleeper } from '@/app/actions/integrations'
 import { SPORT_OPTIONS, FORMAT_OPTIONS } from '@/src/lib/league-options'
-import { Trophy, Users, Hash, CheckCircle } from 'lucide-react'
+import { Trophy, Users, Hash, CheckCircle, Loader2 } from 'lucide-react'
 
 /**
  * Step 2 — review & confirm.
@@ -193,7 +193,12 @@ export default function LeagueCreationForm({
         disabled={loading}
         className="w-full rounded-lg bg-primary px-4 py-3 text-base font-medium text-primary-foreground hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50"
       >
-        {loading ? 'Creating…' : 'Create league'}
+        {loading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Creating…
+          </>
+        ) : 'Create league'}
       </button>
     </form>
   )

@@ -5,6 +5,11 @@ import { useRouter } from 'next/navigation'
 import { Pencil, Plus, Trash2, X } from 'lucide-react'
 import { deletePrizePlace, setPrizePlace } from '@/app/actions/finances'
 import { formatMoney } from '@/src/lib/display'
+import { Button } from '@/components/ui/button'
+import { Field } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { FormMessage } from '@/components/ui/form-message'
+import { SubmitButton } from '@/components/ui/submit-button'
 
 type PrizeRow = {
   id: string
@@ -36,6 +41,15 @@ function ordinalize(n: number): string {
   }
 }
 
+/** Field-specific failures render in the draft row's error slots; anything
+ * else (server-side) renders as one banner inside the draft. */
+type FieldKey = 'place' | 'description' | 'amount'
+
+interface FormError {
+  message: string
+  field?: FieldKey
+}
+
 /**
  * Prize structure editor (Finances-2).
  *
@@ -60,7 +74,7 @@ export default function PrizeEditor({
   const router = useRouter()
   const [draft, setDraft] = useState<Draft | null>(null)
   const [armedDelete, setArmedDelete] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<FormError | null>(null)
   const [pending, startTransition] = useTransition()
 
   const sorted = [...prizes].sort((a, b) => a.place - b.place)
@@ -91,16 +105,16 @@ export default function PrizeEditor({
     if (!draft) return
     const place = draft.place
     if (place === null || !Number.isInteger(place) || place < 1 || place > 100) {
-      setError('Place must be a whole number between 1 and 100.')
+      setError({ message: 'Place must be a whole number between 1 and 100.', field: 'place' })
       return
     }
     if (!draft.description.trim()) {
-      setError('Description is required.')
+      setError({ message: 'Description is required.', field: 'description' })
       return
     }
     const amount = Number(draft.amount)
     if (!Number.isFinite(amount) || amount <= 0) {
-      setError('Payout must be a positive amount.')
+      setError({ message: 'Payout must be a positive amount.', field: 'amount' })
       return
     }
     setError(null)
@@ -112,7 +126,7 @@ export default function PrizeEditor({
         description: draft.description.trim(),
       })
       if (result.error) {
-        setError(result.error)
+        setError({ message: result.error })
         return
       }
       setDraft(null)
@@ -132,7 +146,7 @@ export default function PrizeEditor({
     startTransition(async () => {
       const result = await deletePrizePlace(leagueId, prizeId)
       if (result.error) {
-        setError(result.error)
+        setError({ message: result.error })
         return
       }
       router.refresh()
@@ -209,7 +223,11 @@ export default function PrizeEditor({
         ))}
 
         {draft && (
-          <div
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              save()
+            }}
             className={`space-y-3 border-t border-border bg-muted/40 p-4 sm:p-5 ${
               sorted.length > 0 ? '' : 'border-t-0'
             }`}
@@ -224,80 +242,83 @@ export default function PrizeEditor({
                   setDraft(null)
                   setError(null)
                 }}
-                className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                disabled={pending}
+                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
                 aria-label="Cancel prize edit"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-[7rem_1fr_9rem]">
-              <label className="block text-xs font-medium text-muted-foreground">
-                Place
-                <input
+              <Field
+                label="Place"
+                htmlFor={`prize-place-${seasonYear}`}
+                error={error?.field === 'place' ? error.message : null}
+              >
+                <Input
+                  id={`prize-place-${seasonYear}`}
                   type="number"
                   min="1"
                   max="100"
                   step="1"
+                  inputMode="numeric"
                   value={draft.place ?? ''}
+                  disabled={pending}
                   onChange={(e) =>
                     setDraft({
                       ...draft,
                       place: e.target.value === '' ? null : Number(e.target.value),
                     })
                   }
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  aria-invalid={error?.field === 'place' ? true : undefined}
                 />
-              </label>
-              <label className="block text-xs font-medium text-muted-foreground">
-                Description
-                <input
+              </Field>
+              <Field
+                label="Description"
+                htmlFor={`prize-desc-${seasonYear}`}
+                error={error?.field === 'description' ? error.message : null}
+              >
+                <Input
+                  id={`prize-desc-${seasonYear}`}
                   type="text"
                   maxLength={500}
                   value={draft.description}
+                  disabled={pending}
                   onChange={(e) => setDraft({ ...draft, description: e.target.value })}
                   placeholder="League champion"
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  aria-invalid={error?.field === 'description' ? true : undefined}
                 />
-              </label>
-              <label className="block text-xs font-medium text-muted-foreground">
-                Payout ($)
-                <input
+              </Field>
+              <Field
+                label="Payout ($)"
+                htmlFor={`prize-amount-${seasonYear}`}
+                error={error?.field === 'amount' ? error.message : null}
+              >
+                <Input
+                  id={`prize-amount-${seasonYear}`}
                   type="number"
                   min="0.01"
                   step="0.01"
+                  inputMode="decimal"
                   value={draft.amount}
+                  disabled={pending}
                   onChange={(e) => setDraft({ ...draft, amount: e.target.value })}
                   placeholder="100.00"
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  aria-invalid={error?.field === 'amount' ? true : undefined}
                 />
-              </label>
+              </Field>
             </div>
-            {error && (
-              <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                {error}
-              </p>
-            )}
-            <button
-              type="button"
-              onClick={save}
-              disabled={pending}
-              className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              {pending ? 'Saving…' : 'Save prize'}
-            </button>
-          </div>
+            {error && !error.field && <FormMessage>{error.message}</FormMessage>}
+            <SubmitButton loading={pending}>Save prize</SubmitButton>
+          </form>
         )}
       </div>
 
       {canEdit && !draft && sorted.length > 0 && (
-        <button
-          type="button"
-          onClick={startAdd}
-          className="inline-flex items-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-        >
-          <Plus className="mr-2 h-4 w-4" />
+        <Button type="button" onClick={startAdd} disabled={pending} size="lg">
+          <Plus className="h-4 w-4" />
           Add prize place
-        </button>
+        </Button>
       )}
     </div>
   )

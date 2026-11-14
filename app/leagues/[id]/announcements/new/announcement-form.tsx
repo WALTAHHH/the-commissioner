@@ -4,29 +4,47 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Pin } from 'lucide-react'
 import { createAnnouncement } from '@/app/actions/announcements'
+import { Field } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { FormMessage } from '@/components/ui/form-message'
+import { SubmitButton } from '@/components/ui/submit-button'
 
 /**
  * Create-announcement form (Announcements-2). Submit calls the
  * createAnnouncement server action with the positional-args contract from
  * the spec, then navigates back to the list, where the new announcement
  * appears (pinned first if it was pinned).
+ *
+ * Local validation errors land in the offending field's error slot; server
+ * failures render as one banner after the fields.
  */
+type FieldKey = 'title' | 'body'
+
+interface FormError {
+  message: string
+  field?: FieldKey
+}
+
 export default function AnnouncementForm({ leagueId }: { leagueId: string }) {
   const router = useRouter()
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [isPinned, setIsPinned] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<FormError | null>(null)
   const [pending, startTransition] = useTransition()
+
+  const fieldError = (key: FieldKey) =>
+    error?.field === key ? error.message : null
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!title.trim()) {
-      setError('Title is required.')
+      setError({ message: 'Title is required.', field: 'title' })
       return
     }
     if (!body.trim()) {
-      setError('Body cannot be empty.')
+      setError({ message: 'Body cannot be empty.', field: 'body' })
       return
     }
     setError(null)
@@ -37,7 +55,7 @@ export default function AnnouncementForm({ leagueId }: { leagueId: string }) {
         isPinned,
       })
       if (result.error) {
-        setError(result.error)
+        setError({ message: result.error })
         return
       }
       router.push(`/leagues/${leagueId}/announcements`)
@@ -48,51 +66,47 @@ export default function AnnouncementForm({ leagueId }: { leagueId: string }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-6 rounded-2xl border border-border bg-card p-6 sm:p-8"
+      className="space-y-6 rounded-2xl border border-border bg-card p-5 sm:p-8"
     >
-      {/* Title */}
-      <div>
-        <label
-          htmlFor="announcement-title"
-          className="mb-1.5 block text-sm font-medium text-foreground"
-        >
-          Title
-        </label>
-        <input
+      <Field
+        label="Title"
+        htmlFor="announcement-title"
+        hint="One line members see in the feed."
+        error={fieldError('title')}
+      >
+        <Input
           id="announcement-title"
           type="text"
           value={title}
           maxLength={200}
           required
+          disabled={pending}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Trade deadline moved to Tuesday"
-          className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 focus:border-ring focus:outline-none"
+          aria-invalid={fieldError('title') ? true : undefined}
         />
-      </div>
+      </Field>
 
-      {/* Body */}
-      <div>
-        <label
-          htmlFor="announcement-body"
-          className="mb-1.5 block text-sm font-medium text-foreground"
-        >
-          Body{' '}
-          <span className="font-normal text-muted-foreground">
-            (markdown supported)
-          </span>
-        </label>
-        <textarea
+      <Field
+        label="Body"
+        htmlFor="announcement-body"
+        hint="Markdown supported."
+        error={fieldError('body')}
+      >
+        <Textarea
           id="announcement-body"
           value={body}
           rows={10}
           required
+          disabled={pending}
           onChange={(e) => setBody(e.target.value)}
           placeholder={
             'League, quick update.\n\n- Waiver wire now runs at **1 PM ET**\n- Playoff seeding frozen in Week 14\n\nReply in the group chat with questions.'
           }
-          className="w-full rounded-md border border-input bg-card px-3 py-2 font-mono text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none"
+          className="font-mono leading-relaxed"
+          aria-invalid={fieldError('body') ? true : undefined}
         />
-      </div>
+      </Field>
 
       {/* Pin toggle */}
       <label
@@ -104,7 +118,8 @@ export default function AnnouncementForm({ leagueId }: { leagueId: string }) {
           type="checkbox"
           checked={isPinned}
           onChange={(e) => setIsPinned(e.target.checked)}
-          className="mt-0.5 h-4 w-4 rounded border-input"
+          disabled={pending}
+          className="mt-0.5 h-4 w-4 shrink-0 rounded border-input accent-[var(--primary)]"
         />
         <span className="text-sm">
           <span className="flex items-center gap-1.5 font-medium text-foreground">
@@ -117,32 +132,18 @@ export default function AnnouncementForm({ leagueId }: { leagueId: string }) {
         </span>
       </label>
 
-      {error && (
-        <p
-          role="alert"
-          className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive"
-        >
-          {error}
-        </p>
-      )}
+      {error && !error.field && <FormMessage>{error.message}</FormMessage>}
 
-      {/* Actions */}
       <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
-        <button
-          type="submit"
-          disabled={pending}
-          className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
-          {pending ? 'Posting…' : 'Post announcement'}
-        </button>
-        <button
+        <SubmitButton loading={pending}>Post announcement</SubmitButton>
+        <SubmitButton
           type="button"
-          onClick={() => router.push(`/leagues/${leagueId}/announcements`)}
+          variant="outline"
           disabled={pending}
-          className="inline-flex items-center justify-center rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
+          onClick={() => router.push(`/leagues/${leagueId}/announcements`)}
         >
           Cancel
-        </button>
+        </SubmitButton>
       </div>
     </form>
   )
