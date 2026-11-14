@@ -88,3 +88,13 @@ export function pluralizeCount(count: number, singular: string): string {
   if (count === 0) return `No ${singular}s`
   return `${count} ${singular}s`
 }
+
+/**
+ * Whole-number percentage of `part` over `total`, e.g. (3, 7) -> '43%'.
+ * A zero denominator renders '0%' rather than NaN — polls with no votes yet
+ * and leagues with no members both hit this path.
+ */
+export function formatPercentage(part: number, total: number): string {
+  if (!Number.isFinite(part) || !Number.isFinite(total) || total <= 0) return '0%'
+  return `${Math.round((part / total) * 100)}%`
+}
