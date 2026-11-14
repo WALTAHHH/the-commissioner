@@ -11,7 +11,8 @@ import {
 import ConnectSleeperForm from './connect-sleeper-form'
 import SyncNowButton from './sync-now-button'
 import DisconnectButton from './disconnect-button'
-import { ArrowLeft, ExternalLink, Users, Trophy, Calendar, Plug, RefreshCw } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Users, Trophy, Calendar, RefreshCw } from 'lucide-react'
+import ProviderLogo from '@/components/provider-logo'
 
 export const dynamic = 'force-dynamic'
 
@@ -94,8 +95,8 @@ export default async function SleeperConnectionPage({
 
       {/* Header */}
       <div className="flex items-start gap-4">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-secondary text-secondary-foreground">
-          <Plug className="h-6 w-6" />
+        <div className="flex h-12 shrink-0 items-center">
+          <ProviderLogo provider="sleeper" size="header" />
         </div>
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
