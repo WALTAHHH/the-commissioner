@@ -14,6 +14,7 @@ import {
   LogOut,
   Plug,
   Activity,
+  Wallet,
 } from 'lucide-react'
 import SignOutButton from './SignOutButton'
 import { cn } from 'cn'
@@ -80,6 +81,12 @@ export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavPro
       href: leagueId ? `/leagues/${leagueId}/integrations` : null,
       icon: <Plug className="h-5 w-5" />,
       active: inLeague('integrations'),
+    },
+    {
+      label: 'Finances',
+      href: leagueId ? `/leagues/${leagueId}/finances` : null,
+      icon: <Wallet className="h-5 w-5" />,
+      active: inLeague('finances'),
     },
     {
       label: 'Settings',
