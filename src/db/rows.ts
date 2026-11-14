@@ -30,11 +30,19 @@ export type LeagueRow = {
 export type LeagueMemberRow = {
   id: string
   league_id: string
-  user_id: string
+  /** NULL while the row is an unclaimed placeholder slot (migration 0010). */
+  user_id: string | null
   role: string
   team_name: string | null
   status: string
   joined_at: string
+  is_placeholder: boolean
+  /** Display name for a slot with no auth account; NULL once claimed. */
+  placeholder_name: string | null
+  placeholder_email: string | null
+  placeholder_notes: string | null
+  /** When a real user took the slot over; NULL while unclaimed. */
+  claimed_at: string | null
 }
 
 export type LeagueSeasonRow = {
@@ -53,6 +61,8 @@ export type InvitationRow = {
   expires_at: string
   max_uses: number | null
   use_count: number | null
+  /** Placeholder slot (0010): redeeming this link claims/merges that slot. */
+  placeholder_member_id: string | null
   revoked_at: string | null
   created_at: string
 }

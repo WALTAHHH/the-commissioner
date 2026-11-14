@@ -22,6 +22,10 @@ export const ACTIVITY_EVENT_TYPES = [
   // Membership
   'member_joined',
   'member_removed',
+  // Placeholder slots (migration 0010)
+  'member_placeholder_created',
+  'member_placeholder_claimed',
+  'member_placeholder_merged',
   // Rules
   'rule_created',
   'rule_updated',

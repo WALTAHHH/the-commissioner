@@ -25,6 +25,7 @@
 import { db } from '@/src/lib/db'
 import { fetchIdentities } from '@/src/lib/dashboard'
 import { displayName } from '@/src/lib/display'
+import { selectRowsWithColumnFallback } from '@/src/lib/placeholder'
 import type {
   DecisionRow,
   DisputeRow,
@@ -174,8 +175,11 @@ function nameFor(
 }
 
 /**
- * member id -> display label. Mirrors `src/lib/finances.ts`: the linked
- * user's display name, else the team name, else 'Unknown member'.
+ * member id -> display label. Mirrors `src/lib/finances.ts`: the
+ * placeholder display name for reserved seats (0010), else the linked user's
+ * display name, else the team name, else 'Unknown member'. This map labels
+ * poll voters, dispute raisers and decision records, so a slot's recorded
+ * governance history stays readable before anyone signs up.
  */
 async function loadMemberNames(
   leagueId: string,
@@ -185,23 +189,31 @@ async function loadMemberNames(
   const unique = Array.from(new Set(memberIds.filter(Boolean)))
   if (unique.length === 0) return out
 
-  const { data, error } = await db
-    .from('league_members')
-    .select('id, league_id, user_id, role, team_name, status, joined_at')
-    .eq('league_id', leagueId)
-    .in('id', unique)
+  const { rows, error } = await selectRowsWithColumnFallback<LeagueMemberRow>(
+    (columns) =>
+      db
+        .from('league_members')
+        .select(columns)
+        .eq('league_id', leagueId)
+        .in('id', unique),
+    'id, league_id, user_id, role, team_name, status, joined_at, is_placeholder, placeholder_name',
+    'id, league_id, user_id, role, team_name, status, joined_at',
+  )
   if (error) {
     console.error('governance members lookup error:', error)
     return out // non-fatal: rows still render with fallback names
   }
-  const rows = (data ?? []) as unknown as LeagueMemberRow[]
   const identities = await fetchIdentities(
     rows.map((r) => r.user_id).filter((id): id is string => Boolean(id)),
   )
   for (const row of rows) {
     out.set(
       row.id,
-      row.user_id ? nameFor(identities, row.user_id) : row.team_name ?? UNKNOWN_MEMBER,
+      row.is_placeholder && row.placeholder_name
+        ? row.placeholder_name
+        : row.user_id
+          ? nameFor(identities, row.user_id)
+          : row.team_name ?? UNKNOWN_MEMBER,
     )
   }
   return out

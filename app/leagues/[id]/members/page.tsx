@@ -1,11 +1,12 @@
 import { createClient } from '@/src/utils/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { loadLeagueContext, listActiveMembers } from '@/src/lib/dashboard'
+import { loadLeagueContext, listDirectoryMembers } from '@/src/lib/dashboard'
 import { displayName, prettifyLabel, formatDate, pluralizeCount } from '@/src/lib/display'
 import { isUuid } from '@/src/lib/invitations'
 import RemoveMemberButton from './remove-member-button'
-import InviteMemberButton from '../invite-member-button'
+import InviteSlotButton from './invite-slot-button'
+import PendingBadge, { IntendedRoleSuffix } from './pending-badge'
 import RoleBadge from '@/src/components/role-badge'
 import SleeperUnmatchedTeams from '../components/sleeper-unmatched-teams'
 import { getSleeperDisplayData } from '@/src/lib/integrations/sleeper/mapping'
@@ -46,14 +47,18 @@ export default async function LeagueMembersPage({
   const ctx = await loadLeagueContext(id, user.id)
   if (!ctx) notFound()
 
-  const members = await listActiveMembers(id)
+  const members = await listDirectoryMembers(id)
 
   // Best-effort Sleeper overlay: maps synced roster owners onto these members
   // by display name. null when no Sleeper connection/snapshot exists, in which
   // case the page renders exactly as before (graceful degradation).
+  // Pending slots are excluded from the matcher entirely: there is no account
+  // behind them to line a Sleeper roster owner up with yet.
   const sleeper = await getSleeperDisplayData(
     id,
-    members.map((m) => ({ id: m.id, displayName: displayName(m) })),
+    members
+      .filter((m) => !m.isPlaceholder)
+      .map((m) => ({ id: m.id, displayName: displayName(m) })),
   )
 
   return (
@@ -74,11 +79,11 @@ export default async function LeagueMembersPage({
           </p>
           {ctx.isCommissioner && (
             <Link
-              href={`/leagues/${id}`}
+              href={`/leagues/${id}/members/new`}
               className="inline-flex items-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
             >
               <UserPlus className="mr-2 h-4 w-4" />
-              Invite member
+              Add member
             </Link>
           )}
         </div>
@@ -111,12 +116,19 @@ export default async function LeagueMembersPage({
         <div className="rounded-2xl border border-primary/30 bg-primary/10 p-6 dark:border-primary/30 dark:bg-primary/20">
           <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-primary dark:text-primary/90">
             <UserPlus className="h-5 w-5" />
-            Invite new members
+            Add members
           </h3>
           <p className="mb-4 text-sm text-primary/80 dark:text-primary/70">
-            Create a shareable invite link (7‑day default, unlimited uses)
+            Send a shareable invite link (7‑day default, unlimited uses), or reserve a seat now as
+            a placeholder for someone who hasn&apos;t signed up yet.
           </p>
-          <InviteMemberButton leagueId={id} />
+          <Link
+            href={`/leagues/${id}/members/new`}
+            className="inline-flex items-center rounded-lg bg-primary px-5 py-3 text-base font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            <UserPlus className="mr-3 h-5 w-5" />
+            Add member
+          </Link>
         </div>
       )}
 
@@ -136,7 +148,13 @@ export default async function LeagueMembersPage({
           </p>
           {ctx.isCommissioner && (
             <div className="mt-6">
-              <InviteMemberButton leagueId={id} />
+              <Link
+                href={`/leagues/${id}/members/new`}
+                className="inline-flex items-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                <UserPlus className="mr-2 h-4 w-4" />
+                Add member
+              </Link>
             </div>
           )}
         </div>
@@ -144,10 +162,16 @@ export default async function LeagueMembersPage({
         <ul className="space-y-4">
           {members.map((m) => {
             const sleeperMatch = sleeper?.matchByMemberId.get(m.id) ?? null
+            const pending = m.isPlaceholder === true
+            const slotEmail = m.placeholderEmail?.trim()
             return (
               <li
                 key={m.id}
-                className="rounded-xl border border-border bg-card p-6"
+                className={
+                  pending
+                    ? 'rounded-xl border border-warning/30 bg-card p-6'
+                    : 'rounded-xl border border-border bg-card p-6'
+                }
               >
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-4">
@@ -159,9 +183,16 @@ export default async function LeagueMembersPage({
                         {displayName(m)}
                       </p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <RoleBadge role={m.role} />
+                        {pending ? (
+                          <>
+                            <PendingBadge />
+                            <IntendedRoleSuffix role={m.role} />
+                          </>
+                        ) : (
+                          <RoleBadge role={m.role} />
+                        )}
                         <span className="text-xs text-muted-foreground">
-                          Joined {formatDate(m.joinedAt)}
+                          {pending ? 'Added to roster' : 'Joined'} {formatDate(m.joinedAt)}
                         </span>
                         {m.teamName && (
                           <span className="text-xs text-muted-foreground">
@@ -169,6 +200,16 @@ export default async function LeagueMembersPage({
                           </span>
                         )}
                       </div>
+                      {pending && slotEmail ? (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Reserved for {slotEmail}
+                        </p>
+                      ) : null}
+                      {pending && m.placeholderNotes ? (
+                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground/80 italic">
+                          {m.placeholderNotes}
+                        </p>
+                      ) : null}
                       {/* Sleeper overlay — absent rows render nothing extra */}
                       {sleeperMatch && (
                         <div className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2">
@@ -190,7 +231,14 @@ export default async function LeagueMembersPage({
                     </div>
                   </div>
                   {ctx.isCommissioner && m.role !== 'commissioner' && (
-                    <div className="mt-4 sm:mt-0">
+                    <div className="mt-4 flex items-start gap-3 sm:mt-0">
+                      {pending && (
+                        <InviteSlotButton
+                          leagueId={id}
+                          memberId={m.id}
+                          slotName={displayName(m)}
+                        />
+                      )}
                       <RemoveMemberButton
                         leagueId={id}
                         memberId={m.id}

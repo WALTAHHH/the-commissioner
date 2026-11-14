@@ -10,6 +10,7 @@ import {
 import { sql } from 'drizzle-orm';
 import { authUsers } from './auth';
 import { leagues } from './leagues';
+import { leagueMembers } from './members';
 
 /**
  * Shareable invitation links (Phase 1 / T3).
@@ -39,6 +40,12 @@ export const invitations = pgTable(
     // null = unlimited redemptions
     maxUses: integer('max_uses'),
     useCount: integer('use_count').notNull().default(0),
+    // Placeholder slot (0010): when set, redeeming this link claims/merges
+    // that specific league_members slot for the joining user — see
+    // app/actions/invitations.ts redeemInvitation + src/lib/placeholder.ts.
+    placeholderMemberId: uuid('placeholder_member_id').references(
+      () => leagueMembers.id,
+    ),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()

@@ -22,6 +22,14 @@ import {
 } from '@/src/lib/invitation-lookup'
 import { recordActivity } from '@/src/lib/activity'
 import { displayName } from '@/src/lib/display'
+import {
+  isUniqueViolation,
+  loadSettleableSlot,
+  loadSlotRow,
+  looksLikeMissingPlaceholderColumn,
+  settleSlotForUser,
+  type SlotSettleResult,
+} from '@/src/lib/placeholder'
 import type { LeagueMemberRow } from '@/src/db/rows'
 
 /**
@@ -47,15 +55,9 @@ import type { LeagueMemberRow } from '@/src/db/rows'
 const TOKEN_COLLISION_ATTEMPTS = 5
 /** How many times redeem re-draws a lost use_count race before giving up. */
 const REDEEM_CAS_ATTEMPTS = 3
-const UNIQUE_VIOLATION = '23505'
 
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: string }).code === UNIQUE_VIOLATION
-  )
-}
+// isUniqueViolation lives in src/lib/placeholder.ts (shared with the merge
+// path) — imported above, same 23505 semantics used here since Phase 1.
 
 export interface CreateInvitationResult {
   invitationId?: string
@@ -81,6 +83,11 @@ export interface RedeemInvitationResult {
   leagueName?: string
   /** The user already belonged to the league: no use was burned. */
   alreadyMember?: boolean
+  /**
+   * Copy describing what happened to a placeholder slot linked to this
+   * invite (claimed / merged / still pending), when there was one.
+   */
+  note?: string
   error?: string
 }
 
@@ -102,7 +109,16 @@ async function requireUser() {
  */
 export async function createInvitation(
   leagueId: string,
-  options: { maxUses?: number | null; expiresInSeconds?: number } = {}
+  options: {
+    maxUses?: number | null
+    expiresInSeconds?: number
+    /**
+     * Reserve-link: redeeming this invite settles the given placeholder
+     * slot (claim, or merge into the joiner's existing row). Must be an
+     * unclaimed slot of this league (migration 0010).
+     */
+    placeholderMemberId?: string | null
+  } = {}
 ): Promise<CreateInvitationResult> {
   if (!isUuid(leagueId)) {
     return { error: 'Invalid league id.' }
@@ -111,6 +127,11 @@ export async function createInvitation(
   const maxUses = normalizeMaxUses(options.maxUses ?? null)
   if (maxUses === 'invalid') {
     return { error: 'maxUses must be a whole number of 1 or more, or null for unlimited.' }
+  }
+
+  const placeholderMemberId = options.placeholderMemberId?.trim() || null
+  if (placeholderMemberId && !isUuid(placeholderMemberId)) {
+    return { error: 'Invalid member slot.' }
   }
 
   const user = await requireUser()
@@ -125,6 +146,20 @@ export async function createInvitation(
   }
   if (commissionerId !== user.id) {
     return { error: 'Only the league commissioner can create invite links.' }
+  }
+
+  // A reserve-link must point at an unclaimed slot of THIS league; anything
+  // else is refused rather than silently degraded to a plain link (the
+  // commissioner believes the seat is attached).
+  if (placeholderMemberId) {
+    const loaded = await loadSlotRow(placeholderMemberId)
+    if ('error' in loaded) {
+      return { error: loaded.error }
+    }
+    const slot = loaded.row
+    if (!slot || slot.league_id !== leagueId || !slot.is_placeholder) {
+      return { error: 'Member slot not found in this league.' }
+    }
   }
 
   const expiresAt = invitationExpiryFrom(options.expiresInSeconds)
@@ -146,12 +181,18 @@ export async function createInvitation(
         // explicitly rather than omitted so the app decides the lifetime (the
         // DB default of 7 days is only a backstop).
         expires_at: expiresAt,
+        ...(placeholderMemberId ? { placeholder_member_id: placeholderMemberId } : {}),
       })
       .select('id, expires_at')
       .single()
 
     if (insertError || !inserted) {
       lastError = insertError
+      // The only way a slot-linked insert fails on the column itself:
+      // migration 0010 not applied on this deployment.
+      if (placeholderMemberId && looksLikeMissingPlaceholderColumn(insertError)) {
+        return { error: 'Member slots are not available yet (migration pending).' }
+      }
       if (!isUniqueViolation(insertError)) break
       continue
     }
@@ -261,7 +302,79 @@ function joinerName(user: NonNullable<Awaited<ReturnType<typeof requireUser>>>):
 }
 
 /**
- * Make `userId` an active member of `leagueId`, idempotently.
+ * After a redemption that never exposed the invitation row to us (the
+ * accept_invitation RPC path), settle the placeholder slot linked to the
+ * token, if any. Best-effort by construction: the join already succeeded,
+ * so a slot left pending is the commissioner's to resolve — never fail or
+ * obscure the redemption over it.
+ */
+async function settleSlotForRedeemedToken(
+  token: string,
+  leagueId: string,
+  user: NonNullable<Awaited<ReturnType<typeof requireUser>>>,
+): Promise<string | undefined> {
+  try {
+    const lookup = await loadInvitationByToken(token)
+    if (!lookup?.invitation.placeholder_member_id) return undefined
+    const slot = await loadSettleableSlot(lookup.invitation)
+    if (!slot || slot.league_id !== leagueId) return undefined
+    const settled = await settleSlotForUser(slot, user.id, user.email)
+    return await describeSlotSettlement(settled, slot, leagueId, user)
+  } catch (err) {
+    console.error('slot settlement after redeem failed', err)
+    return undefined
+  }
+}
+
+/**
+ * Turn a settle result into (a) an audit event when records actually moved
+ * and (b) one line of copy for the redeeming user. 'claimed' and 'merged'
+ * are the meaningful outcomes; 'blocked' explains why the reserved seat is
+ * still pending.
+ */
+async function describeSlotSettlement(
+  settled: SlotSettleResult,
+  slot: LeagueMemberRow,
+  leagueId: string,
+  user: NonNullable<Awaited<ReturnType<typeof requireUser>>>,
+): Promise<string | undefined> {
+  const slotLabel = slot.placeholder_name ?? 'A reserved seat'
+
+  if (settled.kind === 'claimed') {
+    await recordActivity(
+      leagueId,
+      user.id,
+      'member_placeholder_claimed',
+      `${slotLabel} was claimed by ${joinerName(user)}`,
+      { placeholderMemberId: slot.id, memberId: settled.memberId, source: 'invitation' },
+    )
+    return `The seat reserved for ${slotLabel} is now your membership — its history came with it.`
+  }
+
+  if (settled.kind === 'merged') {
+    await recordActivity(
+      leagueId,
+      user.id,
+      'member_placeholder_merged',
+      `${slotLabel} was merged into ${joinerName(user)}`,
+      {
+        placeholderMemberId: slot.id,
+        memberId: settled.memberId,
+        moved: settled.moved,
+        source: 'invitation',
+      },
+    )
+    return `The history reserved for ${slotLabel} now belongs to your membership.`
+  }
+
+  if (settled.kind === 'blocked') {
+    return `The seat reserved for ${slotLabel} stays pending: it belongs to a different email address.`
+  }
+
+  return undefined
+}
+
+/**
  *
  * UNIQUE(league_id, user_id) (T4 schema) is what makes this safe to call
  * twice: a brand-new member gets a row, a soft-removed ex-member is
@@ -382,7 +495,11 @@ export async function redeemInvitation(
           return { error: 'This invite link isn’t valid.' }
         }
         if (status === 'already_member') {
-          return { ok: true, alreadyMember: true, leagueId, leagueName }
+          // A slot linked to this invite still settles (merge into the
+          // existing row): the commissioner attached the seat to this
+          // account on purpose. No use is burned — as for a plain link.
+          const note = await settleSlotForRedeemedToken(normalized, leagueId, user)
+          return { ok: true, alreadyMember: true, leagueId, leagueName, note }
         }
         await recordActivity(
           leagueId,
@@ -391,7 +508,8 @@ export async function redeemInvitation(
           `${joinerName(user)} joined the league via invite link`,
           { source: 'invitation' },
         )
-        return { ok: true, leagueId, leagueName }
+        const note = await settleSlotForRedeemedToken(normalized, leagueId, user)
+        return { ok: true, leagueId, leagueName, note }
       }
       return { error: 'This invite link isn’t valid.' }
     }
@@ -408,6 +526,7 @@ export async function redeemInvitation(
     // CAS retry does not mistake our own write for a pre-existing membership
     // and skip the use it owes.
     let owesUse = false
+    let note: string | undefined
 
     for (let attempt = 0; attempt < REDEEM_CAS_ATTEMPTS; attempt++) {
       const lookup = await loadInvitationByToken(normalized)
@@ -426,29 +545,62 @@ export async function redeemInvitation(
       }
 
       if (!owesUse) {
-        const outcome = await joinLeague(league.id, user.id)
-        if (outcome === 'already-active') {
-          return {
-            ok: true,
-            alreadyMember: true,
-            leagueId: league.id,
-            leagueName: league.name,
+        // Placeholder linked to this invite (migration 0010): a brand-new
+        // joiner claims the slot in place — same row, same id, every record
+        // attached to it just became theirs — instead of inserting a second
+        // row. An existing membership settles by merge. The league check
+        // guards a (maliciously) mis-linked FK against another league.
+        const slot = await loadSettleableSlot(invitation)
+        if (slot && slot.league_id === league.id) {
+          const settled = await settleSlotForUser(slot, user.id, user.email)
+          note = await describeSlotSettlement(settled, slot, league.id, user)
+          if (settled.kind === 'claimed') {
+            owesUse = true
+            await recordActivity(
+              league.id,
+              user.id,
+              'member_joined',
+              `${joinerName(user)} claimed a reserved seat via invite link`,
+              {
+                source: 'invitation',
+                invitationId: invitation.id,
+                placeholderMemberId: slot.id,
+                memberId: settled.memberId,
+              },
+            )
           }
+          // 'merged'/'blocked'/'failed'/'none': the join itself continues on
+          // the normal path below (merge already moved the slot's history if
+          // it happened; blocked/failed leave the seat for its intended
+          // owner or for the commissioner to sort out manually).
         }
-        owesUse = true
-        // This request created/reactivated the membership: one event, logged
-        // here so a lost use_count retry cannot duplicate it.
-        await recordActivity(
-          league.id,
-          user.id,
-          'member_joined',
-          `${joinerName(user)} joined the league via invite link`,
-          { source: 'invitation', invitationId: invitation.id, reactivated: outcome === 'reactivated' },
-        )
+
+        if (!owesUse) {
+          const outcome = await joinLeague(league.id, user.id)
+          if (outcome === 'already-active') {
+            return {
+              ok: true,
+              alreadyMember: true,
+              leagueId: league.id,
+              leagueName: league.name,
+              note,
+            }
+          }
+          owesUse = true
+          // This request created/reactivated the membership: one event, logged
+          // here so a lost use_count retry cannot duplicate it.
+          await recordActivity(
+            league.id,
+            user.id,
+            'member_joined',
+            `${joinerName(user)} joined the league via invite link`,
+            { source: 'invitation', invitationId: invitation.id, reactivated: outcome === 'reactivated' },
+          )
+        }
       }
 
       if (await burnInvitationUse(invitation)) {
-        return { ok: true, leagueId: league.id, leagueName: league.name }
+        return { ok: true, leagueId: league.id, leagueName: league.name, note }
       }
       // Lost the race: re-read the invitation (it may meanwhile have hit
       // max_uses or been revoked), re-check validity, re-try the bump.
@@ -465,6 +617,7 @@ export async function redeemInvitation(
       ok: true,
       leagueId: latest?.league?.id,
       leagueName: latest?.league?.name,
+      note,
     }
   } catch (err) {
     console.error('redeemInvitation failed', err)

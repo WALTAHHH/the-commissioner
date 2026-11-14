@@ -13,9 +13,14 @@
 import { db } from '@/src/lib/db'
 import type { InvitationRow } from '@/src/db/rows'
 import type { InvitationValidity } from '@/src/lib/invitations'
+import { looksLikeMissingPlaceholderColumn } from '@/src/lib/placeholder'
 
 /** Invitation columns a caller needs to decide validity + display. */
 const INVITATION_SELECT =
+  'id, league_id, token, created_by, expires_at, max_uses, use_count, revoked_at, created_at, placeholder_member_id'
+// Fallback for deployments where migration 0010 has not been applied yet:
+// the same read without the placeholder link, reported as null.
+const INVITATION_SELECT_BASE =
   'id, league_id, token, created_by, expires_at, max_uses, use_count, revoked_at, created_at'
 
 export type InvitationRecord = InvitationRow & InvitationValidity
@@ -30,6 +35,29 @@ function toDate(value: string | null): Date | null {
   if (!value) return null
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? null : date
+}
+
+/**
+ * `maybeSingle` on invitations with the placeholder link, degrading to the
+ * pre-0010 column list when the new column does not exist yet (the link then
+ * behaves as unlinked, never as a broken lookup).
+ */
+async function invitationMaybeSingle(
+  build: (columns: string) => {
+    maybeSingle: () => PromiseLike<{ data: unknown; error: { message?: string; code?: string } | null }>
+  },
+): Promise<{ data: InvitationRow | null; error: unknown }> {
+  const first = await build(INVITATION_SELECT).maybeSingle()
+  if (!first.error) return { data: (first.data as InvitationRow | null) ?? null, error: null }
+  if (!looksLikeMissingPlaceholderColumn(first.error)) {
+    return { data: null, error: first.error }
+  }
+  const retry = await build(INVITATION_SELECT_BASE).maybeSingle()
+  if (retry.error || !retry.data) return { data: null, error: retry.error }
+  return {
+    data: { ...(retry.data as object), placeholder_member_id: null } as InvitationRow,
+    error: null,
+  }
 }
 
 /** PostgREST row → the Date-typed shape resolveInvitationState expects. */
@@ -51,11 +79,9 @@ export function toInvitationRecord(row: InvitationRow): InvitationRecord {
 export async function loadInvitationByToken(
   token: string,
 ): Promise<{ invitation: InvitationRecord; league: InvitationLeague | null } | null> {
-  const { data, error } = await db
-    .from('invitations')
-    .select(INVITATION_SELECT)
-    .eq('token', token)
-    .maybeSingle()
+  const { data, error } = await invitationMaybeSingle((columns) =>
+    db.from('invitations').select(columns).eq('token', token),
+  )
 
   if (error) {
     console.error('loadInvitationByToken error:', error)
@@ -84,11 +110,9 @@ export async function loadInvitationByToken(
 export async function loadInvitationById(
   invitationId: string,
 ): Promise<InvitationRecord | null> {
-  const { data, error } = await db
-    .from('invitations')
-    .select(INVITATION_SELECT)
-    .eq('id', invitationId)
-    .maybeSingle()
+  const { data, error } = await invitationMaybeSingle((columns) =>
+    db.from('invitations').select(columns).eq('id', invitationId),
+  )
 
   if (error) {
     console.error('loadInvitationById error:', error)

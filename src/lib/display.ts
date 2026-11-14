@@ -12,18 +12,31 @@ export type NameSource = {
   fullName: string | null
   name: string | null
   nickname: string | null
+  /**
+   * Placeholder slot display name (migration 0010). Callers populate this
+   * ONLY while the row is still an unclaimed slot — once a slot is claimed
+   * the mapping code stops passing it, so the auth identity takes over.
+   */
+  placeholderName?: string | null
 }
 
 /**
  * Best available display name for a member.
  *
- * auth.users.raw_user_meta_data is GoTrue's JSONB bag; signup does not collect
- * a name yet, so email is the usual fallback (Phase 1 / T4 behaviour, kept
- * identical here).
+ * Resolution order (placeholder spec): placeholder_name → auth identity
+ * (full_name → name → nickname → email) → 'Unknown member'. auth.users
+ * raw_user_meta_data is GoTrue's JSONB bag; signup does not collect a name
+ * yet, so email is the usual identity fallback (Phase 1 / T4 behaviour,
+ * kept identical here).
  */
 export function displayName(row: NameSource): string {
   return (
-    row.fullName ?? row.name ?? row.nickname ?? row.email ?? 'Unknown member'
+    row.placeholderName ??
+    row.fullName ??
+    row.name ??
+    row.nickname ??
+    row.email ??
+    'Unknown member'
   )
 }
 

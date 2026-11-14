@@ -71,6 +71,13 @@
       "when": 1794630000000,
       "tag": "0009_history",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794635762597,
+      "tag": "0010_placeholder_members",
+      "breakpoints": true
     }
   ]
 }

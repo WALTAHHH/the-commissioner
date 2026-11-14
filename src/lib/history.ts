@@ -9,7 +9,7 @@
  */
 
 import { db } from '@/src/lib/db'
-import { listActiveMembers, type MemberRow } from '@/src/lib/dashboard'
+import { listDirectoryMembers, type MemberRow } from '@/src/lib/dashboard'
 import type {
   SeasonRecordRow,
   LeagueAwardRow,
@@ -100,14 +100,16 @@ export function groupSeasons(
 }
 
 /**
- * league_members.id -> display name, for active members of this league.
- * A Record (not a Map) so pages can pass it straight to client components.
- * Ids missing from the map (former members) must render as 'Former member'.
+ * league_members.id -> display name, for active members of this league
+ * INCLUDING placeholder slots (0010 — pending members can hold season
+ * records). A Record (not a Map) so pages can pass it straight to client
+ * components. Ids missing from the map (former members) must render as
+ * 'Former member'.
  */
 export async function loadMemberNameMap(
   leagueId: string,
 ): Promise<Record<string, string>> {
-  const members = await listActiveMembers(leagueId)
+  const members = await listDirectoryMembers(leagueId)
   const map: Record<string, string> = {}
   for (const m of members) map[m.id] = memberDisplayName(m)
   return map
@@ -116,6 +118,9 @@ export async function loadMemberNameMap(
 export function memberDisplayName(m: MemberRow): string {
   return (
     m.fullName?.trim() ||
+    // Placeholder slot (0010): only listDirectoryMembers populates these, so
+    // rows from the pre-0010 readers keep their exact old labels.
+    (m.isPlaceholder ? m.placeholderName?.trim() : undefined) ||
     m.name?.trim() ||
     m.nickname?.trim() ||
     m.teamName?.trim() ||
