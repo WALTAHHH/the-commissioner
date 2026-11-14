@@ -52,6 +52,17 @@ export function formatDate(value: Date): string {
 }
 
 /**
+ * US dollar amount for every money surface (finances hub, ledger, prizes).
+ * Amounts are dollars (numeric(12,2) at the DB, number at this boundary).
+ */
+export function formatMoney(amount: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  }).format(amount)
+}
+
+/**
  * '2 hours ago' style timestamp for the activity feed; falls back to the
  * absolute date past a week. Clock skew (a row stamped slightly in the
  * future by the DB) renders as 'just now' rather than a negative count.

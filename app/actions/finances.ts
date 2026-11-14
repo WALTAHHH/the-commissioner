@@ -26,9 +26,11 @@
 import { db } from '@/src/lib/db'
 import { createClient } from '@/src/utils/supabase/server'
 import { authorize } from '@/src/lib/auth/authorize'
+import { recordActivity } from '@/src/lib/activity'
 import type {
   FinancialObligationRow,
   FinancialPaymentRow,
+  PrizeStructureRow,
   LeagueMemberRow,
 } from '@/src/db/rows'
 
@@ -89,11 +91,11 @@ async function requireUser() {
  * league the resource doesn't belong to.
  */
 async function loadObligationForLeague(obligationId: string): Promise<
-  { leagueId: string } | { error: string }
+  { leagueId: string; description: string; memberId: string } | { error: string }
 > {
   const { data, error } = await db
     .from('financial_obligations')
-    .select('id, league_id, deleted_at')
+    .select('id, league_id, member_id, description, deleted_at')
     .eq('id', obligationId)
     .maybeSingle()
 
@@ -104,7 +106,7 @@ async function loadObligationForLeague(obligationId: string): Promise<
   if (row.deleted_at) {
     return { error: 'This obligation has been deleted.' }
   }
-  return { leagueId: row.league_id }
+  return { leagueId: row.league_id, description: row.description, memberId: row.member_id }
 }
 
 /** Verify a category exists in THIS league (null/undefined passes). */
@@ -471,7 +473,16 @@ export async function createObligation(
     return { error: 'Failed to create obligation.' }
   }
 
-  return { obligationId: (data as unknown as { id: string }).id }
+  const obligationId = (data as unknown as { id: string }).id
+  await recordActivity(
+    leagueId,
+    user.id,
+    'obligation_created',
+    `Obligation created: “${valid.fields.description}” ($${valid.fields.amount.toFixed(2)})`,
+    { obligationId, memberId, amount: valid.fields.amount },
+  )
+
+  return { obligationId }
 }
 
 /**
@@ -568,9 +579,21 @@ export async function createBulkObligations(
     return { error: 'Failed to create obligations.' }
   }
 
-  return {
-    obligationIds: (data as unknown as { id: string }[]).map((r) => r.id),
-  }
+  const obligationIds = (data as unknown as { id: string }[]).map((r) => r.id)
+  await recordActivity(
+    leagueId,
+    user.id,
+    'obligation_created',
+    `${obligationIds.length} obligations created: “${valid.fields.description}” ($${valid.fields.amount.toFixed(2)} each)`,
+    {
+      bulk: true,
+      memberCount: obligationIds.length,
+      amount: valid.fields.amount,
+      obligationIds,
+    },
+  )
+
+  return { obligationIds }
 }
 
 /**
@@ -632,7 +655,21 @@ export async function recordPayment(
     return { error: 'Failed to record payment.' }
   }
 
-  return { paymentId: (data as unknown as { id: string }).id }
+  const paymentId = (data as unknown as { id: string }).id
+  await recordActivity(
+    obligation.leagueId,
+    user.id,
+    'payment_recorded',
+    `Payment recorded: $${amountResult.amount.toFixed(2)} toward “${obligation.description}”`,
+    {
+      paymentId,
+      obligationId,
+      memberId: obligation.memberId,
+      amount: amountResult.amount,
+    },
+  )
+
+  return { paymentId }
 }
 
 /**
@@ -937,4 +974,153 @@ export async function getLedger(leagueId: string): Promise<GetLedgerResult> {
   entries.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))
 
   return { entries }
+}
+
+// ---------------------------------------------------------------------------
+// Prize structure (Commissioner edits; all members read via src/lib/finances)
+// ---------------------------------------------------------------------------
+
+export interface SetPrizePlaceResult {
+  prizeId?: string
+  error?: string
+}
+
+export interface DeletePrizePlaceResult {
+  error?: string
+}
+
+const PLACE_MAX = 100
+const SEASON_YEAR_MIN = 2000
+const SEASON_YEAR_MAX = 2100
+
+function isInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value)
+}
+
+/**
+ * Create or update a single prize place for a season. Upserts on the
+ * (league_id, season_year, place) unique index — placing 1st for 2026 twice
+ * updates the same row rather than erroring.
+ *
+ * @param leagueId uuid of the league
+ */
+export async function setPrizePlace(
+  leagueId: string,
+  {
+    seasonYear,
+    place,
+    amount,
+    description,
+  }: { seasonYear: number; place: number; amount: number; description: string },
+): Promise<SetPrizePlaceResult> {
+  const user = await requireUser()
+  if (!user) {
+    return { error: 'You must be signed in.' }
+  }
+  if (!isUuid(leagueId)) {
+    return { error: 'Invalid league ID.' }
+  }
+  if (!isInteger(seasonYear) || seasonYear < SEASON_YEAR_MIN || seasonYear > SEASON_YEAR_MAX) {
+    return { error: `Season year must be between ${SEASON_YEAR_MIN} and ${SEASON_YEAR_MAX}.` }
+  }
+  if (!isInteger(place) || place < 1 || place > PLACE_MAX) {
+    return { error: `Place must be a whole number between 1 and ${PLACE_MAX}.` }
+  }
+  if (typeof description !== 'string' || !description.trim()) {
+    return { error: 'Description is required.' }
+  }
+  if (description.trim().length > 500) {
+    return { error: 'Description must be at most 500 characters.' }
+  }
+  const amountResult = normalizeAmount(amount)
+  if (!amountResult.ok) {
+    return { error: amountResult.error }
+  }
+
+  const isAuthorized = await authorize({
+    userId: user.id,
+    leagueId,
+    action: 'setPrizePlace',
+  })
+  if (!isAuthorized) {
+    return { error: 'You are not authorized to edit prizes in this league.' }
+  }
+
+  const row = {
+    league_id: leagueId,
+    season_year: seasonYear,
+    place,
+    description: description.trim(),
+    amount: amountResult.amount,
+    created_by: user.id,
+  }
+
+  // Supabase upsert resolves the target row through the unique index.
+  const { data, error } = await db
+    .from('prize_structure')
+    .upsert(row, { onConflict: 'league_id,season_year,place' })
+    .select('id')
+    .single()
+
+  if (error || !data) {
+    console.error('setPrizePlace upsert error:', error)
+    return { error: 'Failed to save prize place.' }
+  }
+
+  return { prizeId: (data as unknown as { id: string }).id }
+}
+
+/**
+ * Delete one prize place. The league is re-read from the row (never trusted
+ * from the caller) so a prize from another league cannot be targeted.
+ *
+ * @param prizeId uuid of the prize_structure row
+ */
+export async function deletePrizePlace(
+  leagueId: string,
+  prizeId: string,
+): Promise<DeletePrizePlaceResult> {
+  const user = await requireUser()
+  if (!user) {
+    return { error: 'You must be signed in.' }
+  }
+  if (!isUuid(leagueId) || !isUuid(prizeId)) {
+    return { error: 'Invalid prize ID.' }
+  }
+
+  const { data: existing, error: loadError } = await db
+    .from('prize_structure')
+    .select('id, league_id')
+    .eq('id', prizeId)
+    .maybeSingle()
+
+  if (loadError || !existing) {
+    return { error: 'Prize place not found.' }
+  }
+  const row = existing as unknown as Pick<PrizeStructureRow, 'id' | 'league_id'>
+  if (row.league_id !== leagueId) {
+    return { error: 'Prize place not found in this league.' }
+  }
+
+  const isAuthorized = await authorize({
+    userId: user.id,
+    leagueId,
+    action: 'deletePrizePlace',
+    resourceId: prizeId,
+  })
+  if (!isAuthorized) {
+    return { error: 'You are not authorized to edit prizes in this league.' }
+  }
+
+  const { error } = await db
+    .from('prize_structure')
+    .delete()
+    .eq('id', prizeId)
+
+  if (error) {
+    console.error('deletePrizePlace delete error:', error)
+    return { error: 'Failed to delete prize place.' }
+  }
+
+  return {}
 }
