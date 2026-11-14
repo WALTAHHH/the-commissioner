@@ -26,6 +26,8 @@ export const integrationConnections = pgTable(
     createdBy: uuid('created_by').notNull(), // references auth.users.id
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     status: text('status').notNull().default('active'), // 'active' | 'disconnected'
+    espnS2: text('espn_s2'), // TODO: encrypt at rest in production
+    swid: text('swid'), // TODO: encrypt at rest in production
   },
   (table) => [
     uniqueIndex('integration_connections_league_provider_idx').on(
