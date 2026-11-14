@@ -293,5 +293,8 @@ export async function fetchESPNConnectionSnapshot(
     resolved.cookies,
   )
 
-  return { ...outcome, connection: row }
+  // Cookie columns stop here: the returned `connection` must never carry
+  // them into a page's props, however unused they are today.
+  const { espn_s2: _s2, swid: _swid, ...safeRow } = row
+  return { ...outcome, connection: safeRow as Omit<IntegrationConnectionRow, 'espn_s2' | 'swid'> }
 }

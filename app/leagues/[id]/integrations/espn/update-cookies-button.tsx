@@ -8,11 +8,11 @@ import { Input } from '@/components/ui/input'
 import { SubmitButton } from '@/components/ui/submit-button'
 
 /**
- * \"Update cookies\" button for private ESPN connections.
+ * Inline "Update cookies" control for private ESPN connections.
  *
  * Toggles a small inline form with two password fields (espn_s2, SWID).
  * On success the page revalidates via the action's revalidatePath, clearing
- * any \"auth_required\" status and refreshing the snapshot.
+ * any "auth_required" status and refreshing the snapshot.
  */
 export default function UpdateCookiesButton({ connectionId }: { connectionId: string }) {
   const [showForm, setShowForm] = useState(false)

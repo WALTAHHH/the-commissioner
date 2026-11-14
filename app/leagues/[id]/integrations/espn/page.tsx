@@ -4,10 +4,8 @@ import Link from 'next/link'
 import { loadLeagueContext } from '@/src/lib/dashboard'
 import { isUuid } from '@/src/lib/invitations'
 import { formatDate, prettifyLabel } from '@/src/lib/display'
-import {
-  getProviderConnection,
-  fetchESPNConnectionSnapshot,
-} from '@/src/lib/integrations/connections'
+import { getProviderConnection } from '@/src/lib/integrations/connections'
+import { fetchESPNConnectionSnapshot } from '@/src/lib/integrations/espn/snapshot'
 import ConnectESPNForm from './connect-espn-form'
 import SyncNowButton from '../sleeper/sync-now-button'
 import DisconnectButton from '../sleeper/disconnect-button'
@@ -44,7 +42,7 @@ function formatSyncedAt(value: Date): string {
  *
  * Two shapes, keyed off the (league_id, provider) connection row — the
  * unique index means there is at most one, so a previously-disconnected
- * league lands back on the form and \"connect\" reactivates the row:
+ * league lands back on the form, and re-connecting reactivates the row:
  *  - connected: live league details + Sync now / Disconnect / Update cookies
  *  - not connected: form with league ID, season year, private toggle,
  *    cookie fields (revealed on toggle).
