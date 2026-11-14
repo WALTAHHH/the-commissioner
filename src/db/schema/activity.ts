@@ -42,6 +42,7 @@ export const ACTIVITY_EVENT_TYPES = [
   // League lifecycle
   'league_created',
   'league_settings_changed',
+  'season_rolled_over',
   // Integrations
   'integration_connected',
   'integration_synced',

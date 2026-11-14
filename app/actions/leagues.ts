@@ -12,7 +12,7 @@ import {
   isValidSport,
   isValidFormat,
 } from '@/src/lib/league-options'
-import type { LeagueRow } from '@/src/db/rows'
+import type { LeagueRow, LeagueSeasonRow } from '@/src/db/rows'
 
 export interface CreateLeagueResult {
   leagueId?: string
@@ -278,4 +278,173 @@ export async function updateLeagueFinancials(
   )
 
   return {}
+}
+
+// ----------------------------------------------------------------------------
+// Season rollover
+// ----------------------------------------------------------------------------
+
+/** Inclusive bounds for a season year (same convention as app/actions/history.ts). */
+const SEASON_YEAR_MIN = 2000
+const SEASON_YEAR_MAX = 2100
+
+function isValidSeasonYear(year: unknown): year is number {
+  return (
+    typeof year === 'number' &&
+    Number.isInteger(year) &&
+    year >= SEASON_YEAR_MIN &&
+    year <= SEASON_YEAR_MAX
+  )
+}
+
+/** The camelCase view of one `league_seasons` row, mapped at the action boundary. */
+export interface RolledOverSeason {
+  id: string
+  leagueId: string
+  seasonYear: number
+  isCurrent: boolean
+  createdAt: string
+}
+
+export interface RolloverSeasonResult {
+  season?: RolledOverSeason
+  error?: string
+}
+
+function toRolledOverSeason(row: LeagueSeasonRow): RolledOverSeason {
+  return {
+    id: row.id,
+    leagueId: row.league_id,
+    seasonYear: row.season_year,
+    isCurrent: row.is_current === true,
+    createdAt: row.created_at,
+  }
+}
+
+/**
+ * Roll a league over into a new season: archive the current `league_seasons`
+ * row (`is_current = false`) and insert the fresh one (`is_current = true`).
+ *
+ * Commissioner-only, via the shared requireUser/requireCommissioner guards
+ * (leagues.commissioner_id is the source of truth — the authorize() stub still
+ * denies everything, matching the announcements/finances convention).
+ * Historical rows are never deleted or modified beyond the is_current flip,
+ * so the season list doubles as the league's season archive; per-season stats
+ * live in their own tables and are untouched by definition.
+ *
+ * Atomicity note: like createLeague, this cannot run as one PostgREST
+ * transaction (one statement per HTTPS request), so ordering is chosen for
+ * the least-bad crash window — archive first, then insert, and if the insert
+ * fails we flip the archived row back before returning. A container death
+ * between the two writes could leave the league with no current season; the
+ * reads in dashboard/finances already tolerate that (they fall back to the
+ * newest season_year). A future `rollover_season` RPC (same pattern as
+ * create_league) would close the window entirely.
+ *
+ * @param leagueId  uuid of the league
+ * @param newSeasonYear  integer season year for the fresh season row
+ */
+export async function rolloverSeason(
+  leagueId: string,
+  { newSeasonYear }: { newSeasonYear: number },
+): Promise<RolloverSeasonResult> {
+  // 1. Auth + input validation (both arrive through the client boundary).
+  const user = await requireUser()
+  if (!user) {
+    return { error: 'You must be signed in to roll the season over.' }
+  }
+  if (!isUuid(leagueId)) {
+    return { error: 'Invalid league ID.' }
+  }
+  if (!isValidSeasonYear(newSeasonYear)) {
+    return {
+      error: `Season year must be an integer between ${SEASON_YEAR_MIN} and ${SEASON_YEAR_MAX}.`,
+    }
+  }
+
+  // 2. Authorization — commissioner of THIS league. requireCommissioner
+  //    returns false for a missing league too: not your league, same answer.
+  if (!(await requireCommissioner(user.id, leagueId))) {
+    return { error: 'Only the league commissioner can roll the season over.' }
+  }
+
+  // 3. Read the league's season rows once — smallest table in the flow, and
+  //    one request gives us both the current season and any collision on the
+  //    target year (the (league_id, season_year) unique index would reject the
+  //    insert anyway; checking first turns that into a friendly error).
+  const { data: seasonData, error: seasonError } = await db
+    .from('league_seasons')
+    .select('id, league_id, season_year, is_current, created_at')
+    .eq('league_id', leagueId)
+  if (seasonError) {
+    console.error('rolloverSeason season read error:', seasonError)
+    return { error: 'Could not roll the season over. Please try again.' }
+  }
+  const seasons = (seasonData ?? []) as unknown as LeagueSeasonRow[]
+  if (seasons.some((s) => s.season_year === newSeasonYear)) {
+    return { error: `Season ${newSeasonYear} already exists for this league.` }
+  }
+  const current = seasons.find((s) => s.is_current === true) ?? null
+
+  // 4. Archive the current season (when there is one).
+  let archivedId: string | null = null
+  if (current) {
+    const { error: archiveError } = await db
+      .from('league_seasons')
+      .update({ is_current: false })
+      .eq('id', current.id)
+      .eq('league_id', leagueId) // belt-and-braces: never flip a foreign row
+    if (archiveError) {
+      console.error('rolloverSeason archive error:', archiveError)
+      return { error: 'Could not roll the season over. Please try again.' }
+    }
+    archivedId = current.id
+  }
+
+  // 5. Insert the new season. On failure, undo step 4 so the league never
+  //    loses its current season to a half-applied rollover.
+  const { data: inserted, error: insertError } = await db
+    .from('league_seasons')
+    .insert({ league_id: leagueId, season_year: newSeasonYear, is_current: true })
+    .select('id, league_id, season_year, is_current, created_at')
+    .single()
+
+  if (insertError) {
+    if (archivedId) {
+      const { error: undoError } = await db
+        .from('league_seasons')
+        .update({ is_current: true })
+        .eq('id', archivedId)
+        .eq('league_id', leagueId)
+      if (undoError) {
+        // Worst realistic window: no current season until a human/rollover fixes it.
+        console.error('rolloverSeason rollback error:', undoError)
+      }
+    }
+    if (isUniqueViolation(insertError)) {
+      // Lost a race against an identical rollover — the season now exists.
+      return { error: `Season ${newSeasonYear} already exists for this league.` }
+    }
+    console.error('rolloverSeason insert error:', insertError)
+    return { error: 'Could not roll the season over. Please try again.' }
+  }
+
+  const season = toRolledOverSeason(inserted as unknown as LeagueSeasonRow)
+
+  // 6. Audit trail — best-effort by design (see src/lib/activity.ts); a failed
+  //    event write must never fail a committed rollover.
+  await recordActivity(
+    leagueId,
+    user.id,
+    'season_rolled_over',
+    `Season rolled over to ${newSeasonYear}`,
+    {
+      newSeasonId: season.id,
+      newSeasonYear,
+      archivedSeasonId: archivedId,
+      archivedSeasonYear: current?.season_year ?? null,
+    },
+  )
+
+  return { season }
 }
