@@ -109,6 +109,24 @@ export default function UpdateCookiesButton({ connectionId }: { connectionId: st
           />
         </Field>
 
+        <details className="rounded-lg border border-border bg-muted/40 p-3">
+          <summary className="cursor-pointer text-sm font-medium text-foreground">
+            How do I find these?
+          </summary>
+          <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-xs text-muted-foreground">
+            <li>Log into ESPN Fantasy in your browser.</li>
+            <li>Open DevTools (<kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">F12</kbd> or <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">Cmd+Option+I</kbd>).</li>
+            <li>Go to Application → Cookies → <code className="break-all rounded bg-muted px-1 py-0.5 font-mono text-[10px]">https://www.espn.com</code>.</li>
+            <li>Find <code className="break-all rounded bg-muted px-1 py-0.5 font-mono text-[10px]">espn_s2</code> — it&apos;s a long alphanumeric string.</li>
+            <li>Find <code className="break-all rounded bg-muted px-1 py-0.5 font-mono text-[10px]">SWID</code> — it looks like <code className="break-all rounded bg-muted px-1 py-0.5 font-mono text-[10px]">{'{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}'}</code> with curly braces.</li>
+            <li>Copy and paste each value into the fields above.</li>
+          </ol>
+          <p className="mt-3 text-xs text-muted-foreground">
+            These cookies expire when you log out of ESPN. You may need to
+            update them each season.
+          </p>
+        </details>
+
         {error && (
           <p className="text-xs text-destructive">{error}</p>
         )}
