@@ -135,21 +135,14 @@ export default async function LeagueIntegrationsPage({
             Connect your Sleeper or ESPN league to pull rosters, members and settings
             into The Commissioner.
           </p>
-          {ctx.isCommissioner ? (
+                    {ctx.isCommissioner ? (
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
               <Link
-                href={`/leagues/${id}/integrations/sleeper`}
+                href={`/leagues/${id}/integrations/connect`}
                 className="inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 sm:w-auto"
               >
                 <Plus className="mr-2 h-4 w-4" />
-                Connect Sleeper
-              </Link>
-              <Link
-                href={`/leagues/${id}/integrations/espn`}
-                className="inline-flex w-full items-center justify-center rounded-lg border border-border bg-transparent px-4 py-2 text-sm font-medium text-foreground hover:border-ring/60 hover:bg-accent/40 sm:w-auto"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Connect ESPN
+                Connect a fantasy platform
               </Link>
             </div>
           ) : (
@@ -235,24 +228,7 @@ export default async function LeagueIntegrationsPage({
         </div>
       )}
 
-      {ctx.isCommissioner && connections.length > 0 && (
-        <div className="flex gap-3">
-          <Link
-            href={`/leagues/${id}/integrations/sleeper`}
-            className="inline-flex items-center rounded-lg border border-border bg-transparent px-4 py-2 text-sm font-medium text-foreground hover:border-ring/60 hover:bg-accent/40"
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Connect Sleeper
-          </Link>
-          <Link
-            href={`/leagues/${id}/integrations/espn`}
-            className="inline-flex items-center rounded-lg border border-border bg-transparent px-4 py-2 text-sm font-medium text-foreground hover:border-ring/60 hover:bg-accent/40"
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Connect ESPN
-          </Link>
-        </div>
-      )}
+      
 
       {!ctx.isCommissioner && connections.length > 0 && (
         <p className="text-sm text-muted-foreground">
