@@ -43,6 +43,16 @@ export type FinancialCategoryType =
 export const PAYMENT_STATUSES = ['pending', 'received', 'disputed'] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
+// Prize axes (same rationale as above — plain text columns, app-layer
+// constants). A prize is (scope × type): season/weekly crossed with
+// payout/recognition. Weekly prizes carry week_number and no place;
+// season payouts carry place; season recognitions carry neither.
+export const PRIZE_TYPES = ['payout', 'recognition'] as const;
+export type PrizeType = (typeof PRIZE_TYPES)[number];
+
+export const PRIZE_SCOPES = ['season', 'weekly'] as const;
+export type PrizeScope = (typeof PRIZE_SCOPES)[number];
+
 export const financialCategories = pgTable(
   'financial_categories',
   {
@@ -131,9 +141,21 @@ export const prizeStructure = pgTable(
       .references(() => leagues.id)
       .notNull(),
     seasonYear: integer('season_year').notNull(),
-    place: integer('place').notNull(), // 1 = champion
+    // 1 = champion; NULL for weekly prizes and season recognitions, which
+    // have no finishing place.
+    place: integer('place'),
     description: text('description').notNull(),
-    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    // Dollars paid on award; NULL for recognition prizes. Payouts are
+    // required (amount > 0) in app code, not by a column constraint.
+    amount: numeric('amount', { precision: 12, scale: 2 }),
+    type: text('type').notNull().default('payout'), // 'payout' | 'recognition'
+    scope: text('scope').notNull().default('season'), // 'season' | 'weekly'
+    weekNumber: integer('week_number'), // weekly prizes only
+    // Winner recorded after the fact by the commissioner; NULL until awarded.
+    winnerMemberId: uuid('winner_member_id').references(
+      () => leagueMembers.id,
+    ),
+    awardedAt: timestamp('awarded_at', { withTimezone: true }),
     createdBy: uuid('created_by')
       .references(() => authUsers.id)
       .notNull(),
@@ -143,7 +165,15 @@ export const prizeStructure = pgTable(
   },
   (table) => [
     index('prize_structure_league_id_idx').on(table.leagueId),
-    // One payout per place per season.
+    // Season reads: WHERE league_id = ? AND season_year = ?, split by scope.
+    index('prize_structure_league_season_scope_idx').on(
+      table.leagueId,
+      table.seasonYear,
+      table.scope,
+    ),
+    // One payout per place per season. Nullable place rows stay unconstrained
+    // (Postgres treats NULLs as distinct), so weekly/recognition prizes
+    // coexist while old season payouts keep their invariant.
     uniqueIndex('prize_structure_league_season_place_idx').on(
       table.leagueId,
       table.seasonYear,

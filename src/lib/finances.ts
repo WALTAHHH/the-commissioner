@@ -31,6 +31,7 @@ import type {
   PrizeStructureRow,
   UserIdentityRow,
 } from '@/src/db/rows'
+import type { PrizeScope, PrizeType } from '@/src/db/schema/finances'
 
 // ---------------------------------------------------------------------------
 // View types
@@ -106,6 +107,33 @@ export type PrizePlaceView = {
   place: number
   description: string
   amount: number
+}
+
+/** One defined prize — payout or recognition, season- or week-scoped (0011). */
+export type PrizeView = {
+  id: string
+  seasonYear: number
+  scope: PrizeScope
+  type: PrizeType
+  /** finishing place for season payouts; null for weekly / recognitions */
+  place: number | null
+  /** week number for weekly prizes; null for season prizes */
+  weekNumber: number | null
+  description: string
+  /** dollars for payout prizes; null for recognition awards */
+  amount: number | null
+  winnerMemberId: string | null
+  /** resolved display name of the winner; null until awarded */
+  winnerName: string | null
+  /** ISO timestamp of the award; null until awarded */
+  awardedAt: string | null
+  createdAt: string
+}
+
+/** Prize sections for the prizes page: scope → type → rows. */
+export type PrizeSections = {
+  season: { payouts: PrizeView[]; recognitions: PrizeView[] }
+  weekly: { payouts: PrizeView[]; recognitions: PrizeView[] }
 }
 
 export type MemberOptionView = {
@@ -440,7 +468,11 @@ export async function loadCurrentSeasonYear(leagueId: string): Promise<number> {
   return new Date().getFullYear()
 }
 
-/** Prize places for one season, ordered 1st → last. Readable by all members. */
+/**
+ * Legacy season payout ladder (one row per place), ordered 1st → last.
+ * Readable by all members. Weekly/recognition prizes are NOT part of this
+ * view — the prizes pages read them through `loadPrizes` / `getPrizes`.
+ */
 export async function loadPrizeStructure(
   leagueId: string,
   seasonYear: number,
@@ -450,6 +482,9 @@ export async function loadPrizeStructure(
     .select('*')
     .eq('league_id', leagueId)
     .eq('season_year', seasonYear)
+    .eq('scope', 'season')
+    .eq('type', 'payout')
+    .not('place', 'is', null)
     .order('place', { ascending: true })
   if (error) {
     console.error('loadPrizeStructure error:', error)
@@ -458,10 +493,112 @@ export async function loadPrizeStructure(
   return ((data ?? []) as unknown as PrizeStructureRow[]).map((r) => ({
     id: r.id,
     seasonYear: r.season_year,
-    place: r.place,
+    place: r.place as number, // filtered .not('place','is',null)
     description: r.description,
-    amount: toDollars(r.amount),
+    amount: toDollars(r.amount ?? 0), // payouts always carry an amount
   }))
+}
+
+/** Map a raw prize row to its view, resolving the winner's display name. */
+function toPrizeView(
+  r: PrizeStructureRow,
+  memberMap: Map<string, MemberDisplay>,
+  identities: Map<string, UserIdentityRow>,
+): PrizeView {
+  // Unknown DB values degrade to the defaults the columns themselves carry.
+  const scope: PrizeScope = r.scope === 'weekly' ? 'weekly' : 'season'
+  const type: PrizeType = r.type === 'recognition' ? 'recognition' : 'payout'
+  return {
+    id: r.id,
+    seasonYear: r.season_year,
+    scope,
+    type,
+    place: r.place,
+    weekNumber: r.week_number,
+    description: r.description,
+    amount:
+      r.amount === null || r.amount === undefined ? null : toDollars(r.amount),
+    winnerMemberId: r.winner_member_id,
+    winnerName: r.winner_member_id
+      ? memberName(memberMap.get(r.winner_member_id), identities)
+      : null,
+    awardedAt: r.awarded_at,
+    createdAt: r.created_at,
+  }
+}
+
+/** Fresh, unshared empty-sections object (callers may mutate the arrays). */
+function emptyPrizeSections(): PrizeSections {
+  return {
+    season: { payouts: [], recognitions: [] },
+    weekly: { payouts: [], recognitions: [] },
+  }
+}
+
+/**
+ * All prizes for one season, grouped scope → type, with winner names resolved.
+ * Ordering within a group: season payouts by place; weekly prizes by week
+ * then creation; season recognitions by creation.
+ */
+export async function loadPrizes(
+  leagueId: string,
+  seasonYear: number,
+): Promise<PrizeSections> {
+  const { data, error } = await db
+    .from('prize_structure')
+    .select('*')
+    .eq('league_id', leagueId)
+    .eq('season_year', seasonYear)
+    .order('created_at', { ascending: true })
+  if (error) {
+    console.error('loadPrizes error:', error)
+    return emptyPrizeSections()
+  }
+
+  const rows = (data ?? []) as unknown as PrizeStructureRow[]
+  const winnerMemberIds = Array.from(
+    new Set(
+      rows
+        .map((r) => r.winner_member_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  )
+  const memberMap = await loadMemberDisplayMap(leagueId, winnerMemberIds)
+  const identities = await fetchIdentities(
+    Array.from(
+      new Set(
+        Array.from(memberMap.values())
+          .map((m) => m.userId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ),
+  )
+
+  const sections = emptyPrizeSections()
+  for (const r of rows) {
+    const view = toPrizeView(r, memberMap, identities)
+    const bucket =
+      view.type === 'payout'
+        ? sections[view.scope].payouts
+        : sections[view.scope].recognitions
+    bucket.push(view)
+  }
+
+  const byPlace = (a: PrizeView, b: PrizeView) =>
+    (a.place ?? Number.MAX_SAFE_INTEGER) - (b.place ?? Number.MAX_SAFE_INTEGER)
+  const byWeekThenCreated = (a: PrizeView, b: PrizeView) =>
+    (a.weekNumber ?? Number.MAX_SAFE_INTEGER) -
+      (b.weekNumber ?? Number.MAX_SAFE_INTEGER) ||
+    a.createdAt.localeCompare(b.createdAt)
+  const byCreated = (a: PrizeView, b: PrizeView) =>
+    a.createdAt.localeCompare(b.createdAt)
+
+  sections.season.payouts.sort(byPlace)
+  sections.season.recognitions.sort(byCreated)
+  sections.weekly.payouts.sort(byWeekThenCreated)
+  sections.weekly.recognitions.sort(byWeekThenCreated)
+
+  return sections
 }
 
 /**

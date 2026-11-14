@@ -8,9 +8,13 @@
  *    outside the app (cash, Venmo, whatever) and the commissioner logs it.
  *    `payment_instructions` is free text, never parsed, never used to
  *    initiate anything.
- *  - Every action authenticates, validates, then calls `authorize()` before
- *    touching rows. The service-role client bypasses RLS, so application
- *    code is the only gate (see src/lib/db.ts header).
+ *  - Every action authenticates, validates, then gates before touching rows.
+ *    Most go through `authorize()`; the prize-definition actions
+ *    (createPrize/awardPrize/deletePrize) gate on `requireCommissioner`
+ *    instead because `authorize()` is still the repo-wide deny-by-default
+ *    stub — see the helper's comment for the re-unification note.
+ *    The service-role client bypasses RLS, so application code is the only
+ *    gate (see src/lib/db.ts header).
  *  - Cross-league isolation: an obligation's `league_id` is always re-read
  *    from the DB from the row we're about to act on — never trusted from the
  *    caller — and `authorize()` is called with that league.
@@ -27,6 +31,9 @@ import { db } from '@/src/lib/db'
 import { createClient } from '@/src/utils/supabase/server'
 import { authorize } from '@/src/lib/auth/authorize'
 import { recordActivity } from '@/src/lib/activity'
+import { loadLeagueContext } from '@/src/lib/dashboard'
+import { loadPrizes, type PrizeSections } from '@/src/lib/finances'
+import type { PrizeScope, PrizeType } from '@/src/db/schema/finances'
 import type {
   FinancialObligationRow,
   FinancialPaymentRow,
@@ -83,6 +90,29 @@ async function requireUser() {
     data: { user },
   } = await supabase.auth.getUser()
   return user
+}
+
+/**
+ * Commissioner-of-the-league check against the leagues row itself — the same
+ * rule src/lib/dashboard.loadLeagueContext and the announcements/integrations
+ * actions use. The prize-definition WRITE actions gate on this rather than
+ * `authorize()` because that helper is still the repo-wide deny-by-default
+ * stub (it returns false for every action), which would make every prize
+ * write fail unconditionally. When the permission-model workstream replaces
+ * the stub, these calls should move back to `authorize()` like the obligation
+ * actions already do.
+ */
+async function requireCommissioner(
+  userId: string,
+  leagueId: string,
+): Promise<boolean> {
+  const { data, error } = await db
+    .from('leagues')
+    .select('commissioner_id')
+    .eq('id', leagueId)
+    .maybeSingle()
+  if (error || !data) return false
+  return (data as unknown as { commissioner_id: string }).commissioner_id === userId
 }
 
 /**
@@ -1123,4 +1153,361 @@ export async function deletePrizePlace(
   }
 
   return {}
+}
+
+// ---------------------------------------------------------------------------
+// Prize definition system (migration 0011)
+// ---------------------------------------------------------------------------
+//
+// A prize is one row of `prize_structure` described by two axes:
+//   scope: 'season' | 'weekly'  ×  type: 'payout' | 'recognition'
+// Season payouts carry a finishing place and an amount (the legacy ladder the
+// `setPrizePlace` block above still edits); weekly prizes carry a week number
+// instead of a place; recognitions carry no money. Winners are recorded after
+// the fact (`winner_member_id` + `awarded_at`) via `awardPrize`.
+//
+// Write actions gate on `requireCommissioner` (see the helper above), not the
+// `authorize()` stub, so prize management works until the permission model
+// replaces the stub. Reads gate on league membership.
+
+// Value lists mirror PRIZE_TYPES / PRIZE_SCOPES in src/db/schema/finances.ts.
+// Local copies because a 'use server' module may only export async functions,
+// and importing values from the Drizzle schema would pull it into the runtime
+// bundle (see the src/lib/db.ts header).
+const PRIZE_TYPE_VALUES = ['payout', 'recognition'] as const
+const PRIZE_SCOPE_VALUES = ['season', 'weekly'] as const
+
+// Weekly prizes are addressed by week number; the ceiling is generous (a
+// Sleeper season is ≤ ~23 weeks) but keeps garbage out of the field.
+const WEEK_MAX = 52
+
+export interface CreatePrizeInput {
+  seasonYear: number
+  scope: PrizeScope
+  type: PrizeType
+  /** required for season payouts; ignored (nulled) for weekly prizes */
+  place?: number | null
+  /** required for weekly prizes; ignored (nulled) for season prizes */
+  weekNumber?: number | null
+  description: string
+  /** required for payouts; recognition prizes never carry money */
+  amount?: number | null
+}
+
+export interface CreatePrizeResult {
+  prizeId?: string
+  error?: string
+}
+
+export interface AwardPrizeResult {
+  prizeId?: string
+  error?: string
+}
+
+export interface DeletePrizeResult {
+  error?: string
+}
+
+export interface GetPrizesResult {
+  sections?: PrizeSections
+  error?: string
+}
+
+/**
+ * Load a prize row for a mutation. The league is re-read from the row (never
+ * trusted from the caller) so a prize from another league cannot be targeted
+ * by id, and the commissioner check runs against the owning league.
+ */
+async function loadPrizeForLeague(
+  prizeId: string,
+): Promise<PrizeStructureRow | { error: string }> {
+  const { data, error } = await db
+    .from('prize_structure')
+    .select(
+      'id, league_id, season_year, place, description, amount, type, scope, week_number, winner_member_id, awarded_at, created_by, created_at',
+    )
+    .eq('id', prizeId)
+    .maybeSingle()
+  if (error || !data) return { error: 'Prize not found.' }
+  return data as unknown as PrizeStructureRow
+}
+
+/** Verify a winner id is a membership row of THIS league. */
+async function winnerInLeague(
+  leagueId: string,
+  memberId: string,
+): Promise<boolean> {
+  const missing = await filterLeagueMembers(leagueId, [memberId])
+  return missing.length === 0
+}
+
+/**
+ * Define a prize. `scope`/`type` decide which extra fields are required:
+ *   season + payout      → place (1..100) + amount (> 0)
+ *   season + recognition → optional place, no amount
+ *   weekly  + payout     → weekNumber (1..52) + amount (> 0)
+ *   weekly  + recognition→ weekNumber (1..52), no amount
+ * Fields that don't fit the shape are nulled, not rejected (a weekly prize
+ * never stores a place; a recognition never stores money). Left unawarded —
+ * `awardPrize` records the winner later.
+ *
+ * @param leagueId uuid of the league
+ */
+export async function createPrize(
+  leagueId: string,
+  {
+    seasonYear,
+    scope,
+    type,
+    place,
+    weekNumber,
+    description,
+    amount,
+  }: CreatePrizeInput,
+): Promise<CreatePrizeResult> {
+  const user = await requireUser()
+  if (!user) {
+    return { error: 'You must be signed in.' }
+  }
+  if (!isUuid(leagueId)) {
+    return { error: 'Invalid league ID.' }
+  }
+  if (
+    !isInteger(seasonYear) ||
+    seasonYear < SEASON_YEAR_MIN ||
+    seasonYear > SEASON_YEAR_MAX
+  ) {
+    return { error: `Season year must be between ${SEASON_YEAR_MIN} and ${SEASON_YEAR_MAX}.` }
+  }
+  if (!(PRIZE_SCOPE_VALUES as readonly string[]).includes(scope)) {
+    return { error: 'Scope must be season or weekly.' }
+  }
+  if (!(PRIZE_TYPE_VALUES as readonly string[]).includes(type)) {
+    return { error: 'Type must be payout or recognition.' }
+  }
+  if (typeof description !== 'string' || !description.trim()) {
+    return { error: 'Description is required.' }
+  }
+  if (description.trim().length > 500) {
+    return { error: 'Description must be at most 500 characters.' }
+  }
+
+  // --- Scope-shaped fields ---------------------------------------------------
+  let normalizedPlace: number | null = null
+  let normalizedWeek: number | null = null
+  if (scope === 'weekly') {
+    if (
+      !isInteger(weekNumber ?? null) ||
+      (weekNumber as unknown as number) < 1 ||
+      (weekNumber as unknown as number) > WEEK_MAX
+    ) {
+      return { error: `Week number must be a whole number between 1 and ${WEEK_MAX}.` }
+    }
+    normalizedWeek = weekNumber as number
+    // Weekly prizes have no finishing place — `place` is ignored.
+  } else {
+    // season: week number doesn't apply — ignore anything sent.
+    if (place !== undefined && place !== null) {
+      if (!isInteger(place) || place < 1 || place > PLACE_MAX) {
+        return { error: `Place must be a whole number between 1 and ${PLACE_MAX}.` }
+      }
+      normalizedPlace = place
+    }
+    // A season payout without a finishing place is not a payout — it's the
+    // ladder the legacy setPrizePlace editor manages.
+    if (type === 'payout' && normalizedPlace === null) {
+      return { error: 'Season payouts need a finishing place.' }
+    }
+  }
+
+  // --- Money -----------------------------------------------------------------
+  let normalizedAmount: number | null = null
+  if (type === 'payout') {
+    const amountResult = normalizeAmount(amount ?? NaN)
+    if (!amountResult.ok) {
+      return { error: amountResult.error }
+    }
+    normalizedAmount = amountResult.amount
+  }
+  // recognition: no money, ignore anything sent (normalizedAmount stays null).
+
+  if (!(await requireCommissioner(user.id, leagueId))) {
+    return { error: 'You are not authorized to create prizes in this league.' }
+  }
+
+  const row = {
+    league_id: leagueId,
+    season_year: seasonYear,
+    place: normalizedPlace,
+    description: description.trim(),
+    amount: normalizedAmount,
+    type,
+    scope,
+    week_number: normalizedWeek,
+  }
+
+  const { data, error } = await db
+    .from('prize_structure')
+    .insert(row)
+    .select('id')
+    .single()
+
+  if (error || !data) {
+    console.error('createPrize insert error:', error)
+    return { error: 'Failed to create prize.' }
+  }
+
+  const prizeId = (data as unknown as { id: string }).id
+  // normalizeAmount() returns DOLLARS (numeric 12,2), not cents.
+  const amountLabel =
+    normalizedAmount !== null ? ` ($${normalizedAmount.toFixed(2)})` : ''
+  await recordActivity(
+    leagueId,
+    user.id,
+    'prize_created',
+    `Prize defined: “${row.description}” (${scope} ${type})${amountLabel}`,
+    { prizeId, scope, type, amount: normalizedAmount },
+  )
+
+  return { prizeId }
+}
+
+/**
+ * Record who won a defined prize: sets `winner_member_id` and stamps
+ * `awarded_at`. Re-awarding overwrites the previous winner (commissioner
+ * corrections) and refreshes `awarded_at`. No money moves — booking the
+ * payout, if any, stays a separate obligation record (recordkeeping rule).
+ *
+ * @param prizeId uuid of the prize_structure row
+ * @param winnerId uuid of the league_members row that won
+ */
+export async function awardPrize(
+  prizeId: string,
+  winnerId: string,
+): Promise<AwardPrizeResult> {
+  const user = await requireUser()
+  if (!user) {
+    return { error: 'You must be signed in.' }
+  }
+  if (!isUuid(prizeId)) {
+    return { error: 'Invalid prize ID.' }
+  }
+  if (!isUuid(winnerId)) {
+    return { error: 'Invalid winner ID.' }
+  }
+
+  const prize = await loadPrizeForLeague(prizeId)
+  if ('error' in prize) {
+    return { error: prize.error }
+  }
+
+  if (!(await requireCommissioner(user.id, prize.league_id))) {
+    return { error: 'You are not authorized to award prizes in this league.' }
+  }
+
+  if (!(await winnerInLeague(prize.league_id, winnerId))) {
+    return { error: 'Winner not found in this league.' }
+  }
+
+  const awardedAt = new Date().toISOString()
+  const { error: updateError } = await db
+    .from('prize_structure')
+    .update({ winner_member_id: winnerId, awarded_at: awardedAt })
+    .eq('id', prizeId)
+  if (updateError) {
+    console.error('awardPrize update error:', updateError)
+    return { error: 'Failed to award prize.' }
+  }
+
+  await recordActivity(
+    prize.league_id,
+    user.id,
+    'prize_awarded',
+    `Prize awarded: “${prize.description}”`,
+    { prizeId, winnerId },
+  )
+
+  return { prizeId }
+}
+
+/**
+ * Delete a prize. HARD delete: `prize_structure` is a config table (what the
+ * commissioner defines), and award history survives in `activity_events`
+ * (`prize_awarded` / `prize_deleted`) and the history tables — deleting a
+ * prize never erases the fact that someone won it. Same rationale as
+ * `deletePrizePlace` above, and no `deleted_at` column exists on this table.
+ * The league is re-read from the row so a prize from another league cannot be
+ * targeted by id.
+ *
+ * @param prizeId uuid of the prize_structure row
+ */
+export async function deletePrize(prizeId: string): Promise<DeletePrizeResult> {
+  const user = await requireUser()
+  if (!user) {
+    return { error: 'You must be signed in.' }
+  }
+  if (!isUuid(prizeId)) {
+    return { error: 'Invalid prize ID.' }
+  }
+
+  const prize = await loadPrizeForLeague(prizeId)
+  if ('error' in prize) {
+    return { error: prize.error }
+  }
+
+  if (!(await requireCommissioner(user.id, prize.league_id))) {
+    return { error: 'You are not authorized to edit prizes in this league.' }
+  }
+
+  const { error } = await db
+    .from('prize_structure')
+    .delete()
+    .eq('id', prizeId)
+
+  if (error) {
+    console.error('deletePrize delete error:', error)
+    return { error: 'Failed to delete prize.' }
+  }
+
+  await recordActivity(
+    prize.league_id,
+    user.id,
+    'prize_deleted',
+    `Prize deleted: “${prize.description}”`,
+    { prizeId, scope: prize.scope, type: prize.type },
+  )
+
+  return {}
+}
+
+/**
+ * All prizes for one season, grouped by scope (season/weekly) and type
+ * (payout/recognition), with resolved winner names. Read gate: any member of
+ * the league (loadLeagueContext enforces membership — the same source the
+ * pages trust; the authorize() stub is not usable for reads).
+ *
+ * @param leagueId uuid of the league
+ * @param seasonYear e.g. 2026
+ */
+export async function getPrizes(
+  leagueId: string,
+  seasonYear: number,
+): Promise<GetPrizesResult> {
+  const user = await requireUser()
+  if (!user) {
+    return { error: 'You must be signed in.' }
+  }
+  if (!isUuid(leagueId)) {
+    return { error: 'Invalid league ID.' }
+  }
+  if (!isInteger(seasonYear)) {
+    return { error: 'Invalid season year.' }
+  }
+
+  const ctx = await loadLeagueContext(leagueId, user.id)
+  if (!ctx) {
+    return { error: 'You are not authorized to view prizes in this league.' }
+  }
+
+  return { sections: await loadPrizes(leagueId, seasonYear) }
 }
