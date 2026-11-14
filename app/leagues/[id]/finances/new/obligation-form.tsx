@@ -2,14 +2,8 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Users, User } from 'lucide-react'
+import { Users, User, Loader2 } from 'lucide-react'
 import { createObligation, createBulkObligations } from '@/app/actions/finances'
-import { Field } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
-import { FormMessage } from '@/components/ui/form-message'
-import { SubmitButton } from '@/components/ui/submit-button'
 
 type MemberOption = { memberId: string; displayName: string }
 type CategoryOption = { id: string; name: string; type: string }
@@ -25,17 +19,7 @@ type CategoryOption = { id: string; name: string; type: string }
  *
  * `payment_instructions` is plain text only: what the member should do to
  * settle up outside the app. Nothing here can initiate a payment.
- *
- * Local validation renders in the offending field's error slot; server-side
- * failures render as one banner before the actions.
  */
-type FieldKey = 'member' | 'description' | 'amount'
-
-interface FormError {
-  message: string
-  field?: FieldKey
-}
-
 export default function ObligationForm({
   leagueId,
   members,
@@ -54,12 +38,10 @@ export default function ObligationForm({
   const [categoryId, setCategoryId] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [instructions, setInstructions] = useState('')
-  const [error, setError] = useState<FormError | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   const allSelected = members.length > 0 && selectedIds.size === members.length
-  const fieldError = (key: FieldKey) =>
-    error?.field === key ? error.message : null
 
   function toggleMember(id: string) {
     setSelectedIds((prev) => {
@@ -77,20 +59,20 @@ export default function ObligationForm({
   function submit() {
     setError(null)
     if (!description.trim()) {
-      setError({ message: 'Description is required.', field: 'description' })
+      setError('Description is required.')
       return
     }
     const parsed = Number(amount)
     if (!amount.trim() || !Number.isFinite(parsed) || parsed <= 0) {
-      setError({ message: 'Amount must be a positive number.', field: 'amount' })
+      setError('Amount must be a positive number.')
       return
     }
     if (mode === 'single' && !memberId) {
-      setError({ message: 'Pick a member.', field: 'member' })
+      setError('Pick a member.')
       return
     }
     if (mode === 'bulk' && selectedIds.size === 0) {
-      setError({ message: 'Pick at least one member.', field: 'member' })
+      setError('Pick at least one member.')
       return
     }
 
@@ -111,7 +93,7 @@ export default function ObligationForm({
               memberIds: Array.from(selectedIds),
             })
       if (result.error) {
-        setError({ message: result.error })
+        setError(result.error)
         return
       }
       router.push(`/leagues/${leagueId}/finances`)
@@ -119,13 +101,7 @@ export default function ObligationForm({
   }
 
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault()
-        submit()
-      }}
-      className="mx-auto w-full max-w-2xl space-y-6"
-    >
+    <div className="mx-auto w-full max-w-2xl space-y-6">
       {/* Mode toggle */}
       <div className="grid grid-cols-2 gap-3">
         {(
@@ -138,9 +114,7 @@ export default function ObligationForm({
             key={option.key}
             type="button"
             onClick={() => setMode(option.key)}
-            aria-pressed={mode === option.key}
-            disabled={pending}
-            className={`inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-medium transition-colors disabled:opacity-60 ${
+            className={`inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-medium transition-colors ${
               mode === option.key
                 ? 'border-primary bg-primary/10 text-primary'
                 : 'border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -155,18 +129,12 @@ export default function ObligationForm({
       <div className="space-y-5 rounded-2xl border border-border bg-card p-5 sm:p-6">
         {/* Member picker */}
         {mode === 'single' ? (
-          <Field
-            label="Member"
-            htmlFor="obligation-member"
-            hint="Who owes this."
-            error={fieldError('member')}
-          >
-            <Select
-              id="obligation-member"
+          <label className="block text-sm font-medium text-foreground">
+            Member
+            <select
               value={memberId}
-              disabled={pending}
               onChange={(e) => setMemberId(e.target.value)}
-              aria-invalid={fieldError('member') ? true : undefined}
+              className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
             >
               <option value="">Select a member…</option>
               {members.map((m) => (
@@ -174,33 +142,26 @@ export default function ObligationForm({
                   {m.displayName}
                 </option>
               ))}
-            </Select>
-          </Field>
+            </select>
+          </label>
         ) : (
-          <Field
-            label={
-              <>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-foreground">
                 Members{' '}
                 <span className="font-normal text-muted-foreground">
                   ({selectedIds.size} of {members.length})
                 </span>
-              </>
-            }
-            hint="Pick everyone who owes the same amount."
-            error={fieldError('member')}
-          >
-            <div className="flex items-center justify-between pb-1">
-              <span className="text-xs text-muted-foreground">Selected members</span>
+              </p>
               <button
                 type="button"
                 onClick={toggleAll}
-                disabled={pending || members.length === 0}
-                className="text-xs font-medium text-primary hover:underline disabled:opacity-50"
+                className="text-xs font-medium text-primary hover:underline"
               >
                 {allSelected ? 'Clear all' : 'Select all'}
               </button>
             </div>
-            <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-input bg-transparent px-2 py-1.5">
+            <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-border bg-background p-2">
               {members.length === 0 && (
                 <p className="p-2 text-sm text-muted-foreground">
                   No active members yet.
@@ -215,63 +176,46 @@ export default function ObligationForm({
                     type="checkbox"
                     checked={selectedIds.has(m.memberId)}
                     onChange={() => toggleMember(m.memberId)}
-                    disabled={pending}
-                    className="h-4 w-4 shrink-0 rounded border-input accent-[var(--primary)]"
+                    className="h-4 w-4 rounded border-border accent-current"
                   />
-                  <span className="min-w-0 break-words">{m.displayName}</span>
+                  {m.displayName}
                 </label>
               ))}
             </div>
-          </Field>
+          </div>
         )}
 
-        <Field
-          label="Description"
-          htmlFor="obligation-description"
-          hint="What this charge is for."
-          error={fieldError('description')}
-        >
-          <Input
-            id="obligation-description"
+        <label className="block text-sm font-medium text-foreground">
+          Description
+          <input
             type="text"
             maxLength={500}
             value={description}
-            disabled={pending}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Season dues"
-            aria-invalid={fieldError('description') ? true : undefined}
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
           />
-        </Field>
+        </label>
 
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-          <Field
-            label="Amount ($)"
-            htmlFor="obligation-amount"
-            error={fieldError('amount')}
-          >
-            <Input
-              id="obligation-amount"
+          <label className="block text-sm font-medium text-foreground">
+            Amount ($)
+            <input
               type="number"
               min="0.01"
               step="0.01"
-              inputMode="decimal"
               value={amount}
-              disabled={pending}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="25.00"
-              aria-invalid={fieldError('amount') ? true : undefined}
+              className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
             />
-          </Field>
-          <Field
-            label="Category (optional)"
-            htmlFor="obligation-category"
-            hint="Groups this in the ledger."
-          >
-            <Select
-              id="obligation-category"
+          </label>
+          <label className="block text-sm font-medium text-foreground">
+            Category (optional)
+            <select
               value={categoryId}
-              disabled={pending}
               onChange={(e) => setCategoryId(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
             >
               <option value="">None</option>
               {categories.map((c) => (
@@ -279,59 +223,65 @@ export default function ObligationForm({
                   {c.name}
                 </option>
               ))}
-            </Select>
-          </Field>
+            </select>
+          </label>
         </div>
 
-        <Field
-          label="Due date (optional)"
-          htmlFor="obligation-due"
-          hint="Overdue obligations are flagged in the ledger."
-        >
-          <Input
-            id="obligation-due"
+        <label className="block text-sm font-medium text-foreground">
+          Due date (optional)
+          <input
             type="date"
             value={dueDate}
-            disabled={pending}
             onChange={(e) => setDueDate(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
           />
-        </Field>
+        </label>
 
-        <Field
-          label="Payment instructions (optional)"
-          htmlFor="obligation-instructions"
-          hint="Notes only. The app never moves money and never links out to a payment service."
-        >
-          <Textarea
-            id="obligation-instructions"
+        <label className="block text-sm font-medium text-foreground">
+          Payment instructions (optional)
+          <textarea
             maxLength={1000}
             rows={3}
             value={instructions}
-            disabled={pending}
             onChange={(e) => setInstructions(e.target.value)}
             placeholder="How the member should settle up — plain text the commissioner and member can read."
+            className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
           />
-        </Field>
+          <span className="mt-1 block text-xs text-muted-foreground">
+            Notes only. The app never moves money and never links out to a
+            payment service.
+          </span>
+        </label>
       </div>
 
-      {error && !error.field && <FormMessage>{error.message}</FormMessage>}
+      {error && (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {error}
+        </p>
+      )}
 
       <div className="flex flex-col gap-3 sm:flex-row">
-        <SubmitButton loading={pending} className="w-full sm:w-auto">
-          {mode === 'single'
-            ? 'Create obligation'
-            : `Create for ${selectedIds.size || 'all'} member${selectedIds.size === 1 ? '' : 's'}`}
-        </SubmitButton>
-        <SubmitButton
+        <button
           type="button"
-          variant="outline"
+          onClick={submit}
           disabled={pending}
-          className="w-full sm:w-auto"
+          className="inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 sm:w-auto"
+        >
+          {pending ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Saving…
+            </>
+          ) : mode === 'single' ? 'Create obligation' : `Create for ${selectedIds.size || 'all'} member${selectedIds.size === 1 ? '' : 's'}`}
+        </button>
+        <button
+          type="button"
           onClick={() => router.push(`/leagues/${leagueId}/finances`)}
+          className="inline-flex w-full items-center justify-center rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-accent sm:w-auto"
         >
           Cancel
-        </SubmitButton>
+        </button>
       </div>
-    </form>
+    </div>
   )
 }

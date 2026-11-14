@@ -5,12 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createLeague } from '@/app/actions/leagues'
 import { connectSleeper } from '@/app/actions/integrations'
 import { SPORT_OPTIONS, FORMAT_OPTIONS } from '@/src/lib/league-options'
-import { Field } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { FormMessage } from '@/components/ui/form-message'
-import { SubmitButton } from '@/components/ui/submit-button'
-import { Trophy, Users, Hash, CheckCircle } from 'lucide-react'
+import { Trophy, Users, Hash, CheckCircle, Loader2 } from 'lucide-react'
 
 /**
  * Step 2 — review & confirm.
@@ -104,9 +99,9 @@ export default function LeagueCreationForm({
         <div className="rounded-lg border border-border bg-blue-50/50 p-4 dark:bg-blue-900/30">
           <div className="flex items-start gap-3">
             <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400" />
-            <div className="min-w-0">
+            <div>
               <p className="font-medium text-foreground">Imported from Sleeper</p>
-              <p className="mt-1 break-words text-sm text-muted-foreground">
+              <p className="mt-1 text-sm text-muted-foreground">
                 {[imported.name, ...badgeFacts].filter(Boolean).join(' · ')}
               </p>
             </div>
@@ -114,8 +109,15 @@ export default function LeagueCreationForm({
         </div>
       )}
 
-      <Field label={<><Hash className="mr-1 inline h-4 w-4 align-text-bottom" />League name</>} htmlFor="name">
-        <Input
+      <div>
+        <label
+          htmlFor="name"
+          className="mb-2 flex items-center gap-2 text-sm font-medium text-foreground"
+        >
+          <Hash className="h-4 w-4" />
+          League name
+        </label>
+        <input
           id="name"
           name="name"
           type="text"
@@ -123,57 +125,81 @@ export default function LeagueCreationForm({
           maxLength={80}
           placeholder="Sunday Bloodbath"
           required
-          disabled={loading}
           defaultValue={initialValues.name}
+          className="w-full rounded-lg border border-input bg-transparent px-4 py-3 text-foreground placeholder:text-muted-foreground/70 focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
         />
-      </Field>
+      </div>
 
-      <Field label={<><Trophy className="mr-1 inline h-4 w-4 align-text-bottom" />Sport</>} htmlFor="sport">
-        <Select
+      <div>
+        <label
+          htmlFor="sport"
+          className="mb-2 flex items-center gap-2 text-sm font-medium text-foreground"
+        >
+          <Trophy className="h-4 w-4" />
+          Sport
+        </label>
+        <select
           id="sport"
           name="sport"
-          disabled={loading}
           defaultValue={initialValues.sport || 'football'}
+          className="w-full rounded-lg border border-input bg-transparent px-4 py-3 text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
         >
           {SPORT_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
               {opt.label}
             </option>
           ))}
-        </Select>
-      </Field>
+        </select>
+      </div>
 
-      <Field
-        label={<><Users className="mr-1 inline h-4 w-4 align-text-bottom" />Format</>}
-        htmlFor="format"
-        hint={
-          imported && initialValues.season
-            ? `Your Sleeper league is on the ${initialValues.season} season; the league record starts in the current season either way.`
-            : 'The league record starts in the current season.'
-        }
-      >
-        <Select
+      <div>
+        <label
+          htmlFor="format"
+          className="mb-2 flex items-center gap-2 text-sm font-medium text-foreground"
+        >
+          <Users className="h-4 w-4" />
+          Format
+        </label>
+        <select
           id="format"
           name="format"
-          disabled={loading}
           defaultValue={initialValues.format || 'redraft'}
+          className="w-full rounded-lg border border-input bg-transparent px-4 py-3 text-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
         >
           {FORMAT_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
               {opt.label}
             </option>
           ))}
-        </Select>
-      </Field>
+        </select>
+        <p className="mt-2 text-xs text-muted-foreground">
+          {imported && initialValues.season
+            ? `Your Sleeper league is on the ${initialValues.season} season; the league record starts in the current season either way.`
+            : 'The league record starts in the current season.'}
+        </p>
+      </div>
 
-      <FormMessage>{error}</FormMessage>
+      {error && (
+        <p
+          role="alert"
+          className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+        >
+          {error}
+        </p>
+      )}
 
-      <SubmitButton
-        loading={loading}
-        className="w-full py-3 text-base"
+      <button
+        type="submit"
+        disabled={loading}
+        className="w-full rounded-lg bg-primary px-4 py-3 text-base font-medium text-primary-foreground hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50"
       >
-        Create league
-      </SubmitButton>
+        {loading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Creating…
+          </>
+        ) : 'Create league'}
+      </button>
     </form>
   )
 }
