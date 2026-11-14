@@ -10,7 +10,8 @@ import ConnectESPNForm from './connect-espn-form'
 import SyncNowButton from '../sleeper/sync-now-button'
 import DisconnectButton from '../sleeper/disconnect-button'
 import UpdateCookiesButton from './update-cookies-button'
-import { ArrowLeft, ExternalLink, Users, Trophy, Calendar, Plug, RefreshCw, Lock } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Users, Trophy, Calendar, RefreshCw, Lock } from 'lucide-react'
+import ProviderLogo from '@/components/provider-logo'
 
 export const dynamic = 'force-dynamic'
 
@@ -95,8 +96,8 @@ export default async function ESPNConnectionPage({
 
       {/* Header */}
       <div className="flex items-start gap-4">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-secondary text-secondary-foreground">
-          <Plug className="h-6 w-6" />
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center">
+          <ProviderLogo provider="espn" size="header" variant="square" />
         </div>
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">

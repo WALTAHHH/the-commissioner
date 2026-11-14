@@ -7,7 +7,7 @@ import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { FormMessage } from '@/components/ui/form-message'
 import { SubmitButton } from '@/components/ui/submit-button'
-import { Globe } from 'lucide-react'
+import ProviderLogo from '@/components/provider-logo'
 
 /**
  * Serializable in/out contract for the inline `verifyESPN` Server Function
@@ -121,9 +121,7 @@ export default function EspnImportForm({ verifyESPN }: EspnImportFormProps) {
   return (
     <div className="mt-6 rounded-2xl border border-border bg-card p-6 shadow-lg sm:p-8">
       <div className="mb-6 flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-600">
-          <Globe className="h-6 w-6 text-white" />
-        </div>
+        <ProviderLogo provider="espn" size="card" variant="square" />
         <h2 className="text-xl font-bold tracking-tight text-foreground">
           Connect your ESPN league
         </h2>

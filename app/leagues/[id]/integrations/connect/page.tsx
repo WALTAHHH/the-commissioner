@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { loadLeagueContext } from '@/src/lib/dashboard'
 import { isUuid } from '@/src/lib/invitations'
 import { ArrowLeft, Plug } from 'lucide-react'
+import ProviderLogo from '@/components/provider-logo'
 
 export const dynamic = 'force-dynamic'
 
@@ -112,8 +113,8 @@ export default async function PlatformPickerPage({
         >
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-secondary text-secondary-foreground">
-                <Plug className="h-5 w-5" />
+              <div className="flex h-10 shrink-0 items-center">
+                <ProviderLogo provider="sleeper" size="card" />
               </div>
               <div className="min-w-0">
                 <h3 className="truncate text-base font-semibold text-foreground">
@@ -141,8 +142,8 @@ export default async function PlatformPickerPage({
         >
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-secondary text-secondary-foreground">
-                <Plug className="h-5 w-5" />
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+                <ProviderLogo provider="espn" size="card" variant="square" />
               </div>
               <div className="min-w-0">
                 <h3 className="truncate text-base font-semibold text-foreground">

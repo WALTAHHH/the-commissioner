@@ -7,7 +7,7 @@ import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { FormMessage } from '@/components/ui/form-message'
 import { SubmitButton } from '@/components/ui/submit-button'
-import { Zap } from 'lucide-react'
+import ProviderLogo from '@/components/provider-logo'
 
 /**
  * Step 1, Option A: look up an existing Sleeper league before anything is
@@ -71,9 +71,7 @@ export default function SleeperImportForm() {
         </span>
       </div>
       <div className="mb-6 flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-orange-500">
-          <Zap className="h-6 w-6 text-white" />
-        </div>
+        <ProviderLogo provider="sleeper" size="card" />
         <h2 className="text-xl font-bold tracking-tight text-foreground">
           Connect your Sleeper league
         </h2>
