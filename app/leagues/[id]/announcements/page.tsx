@@ -73,7 +73,7 @@ export default async function LeagueAnnouncementsPage({
       <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            Announcements
+            {ctx.name} Announcements
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {ctx.name}
