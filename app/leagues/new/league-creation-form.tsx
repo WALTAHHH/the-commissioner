@@ -22,26 +22,38 @@ import { Trophy, Users, Hash, CheckCircle, Loader2 } from 'lucide-react'
  * commissioner may want to rename the league or adjust the format.
  */
 
-interface ImportedInfo {
-  /** Sleeper league ID — the connection row is created with this on confirm. */
-  sleeperLeagueId: string
-  /** League name as fetched from Sleeper (display in the badge). */
-  name: string
-  /** Display label for scoring/style, e.g. 'PPR Redraft'. */
-  formatLabel?: string
-  memberCount?: number
-  teamCount?: number
-}
+export type ImportedInfo =
+  | {
+      /** Sleeper league ID — the connection row is created with this on confirm. */
+      sleeperLeagueId: string
+      /** League name as fetched from Sleeper (display in the badge). */
+      name: string
+      /** Display label for scoring/style, e.g. 'PPR Redraft'. */
+      formatLabel?: string
+      memberCount?: number
+      teamCount?: number
+    }
+  | {
+      /** ESPN league ID — the connection row is created with this on confirm. */
+      espnLeagueId: string
+      /** League name as fetched from ESPN (display in the badge). */
+      name: string
+      /** Season year shown in the badge. */
+      seasonYear?: string
+      /** Cookie values carried forward for private leagues. */
+      espnS2?: string
+      swid?: string
+    }
 
 interface LeagueCreationFormProps {
-  /** Pre-filled values from the Sleeper preview; empty in manual mode. */
+  /** Pre-filled values from the Sleeper/ESPN preview; empty in manual mode. */
   initialValues?: {
     name: string
     sport: string
     format: string
     season: string
   }
-  /** Present only when this league was imported from Sleeper in Step 1. */
+  /** Present only when this league was imported from Sleeper or ESPN in Step 1. */
   imported?: ImportedInfo
 }
 
@@ -71,7 +83,7 @@ export default function LeagueCreationForm({
     // ID), we must NOT park the user on this form — a retry would create a
     // second league. The league exists and is fully usable; Sleeper can be
     // connected (or retried) from the integrations hub at any time.
-    if (imported?.sleeperLeagueId) {
+    if (imported && 'sleeperLeagueId' in imported) {
       const connection = await connectSleeper(result.leagueId, imported.sleeperLeagueId)
       if (connection.error) {
         console.warn('League created, but Sleeper connect failed:', connection.error)
@@ -81,14 +93,19 @@ export default function LeagueCreationForm({
     router.push(`/leagues/${result.leagueId}`)
   }
 
+  const isESPN = !!imported && 'espnLeagueId' in imported
+
+  // Property-presence checks must be inline `in` expressions: a boolean
+  // variable (e.g. `const isSleeper = 'sleeperLeagueId' in imported`) does
+  // not narrow the union, so `imported.memberCount` would be a TS error.
   const badgeFacts = imported
     ? [
-        imported.memberCount
+        'memberCount' in imported && imported.memberCount
           ? `${imported.memberCount} members`
-          : imported.teamCount
+          : 'teamCount' in imported && imported.teamCount
             ? `${imported.teamCount} teams`
             : null,
-        imported.formatLabel || null,
+        'formatLabel' in imported && imported.formatLabel ? imported.formatLabel : null,
         initialValues.season ? `${initialValues.season} season` : null,
       ].filter(Boolean)
     : []
@@ -100,7 +117,9 @@ export default function LeagueCreationForm({
           <div className="flex items-start gap-3">
             <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400" />
             <div>
-              <p className="font-medium text-foreground">Imported from Sleeper</p>
+              <p className="font-medium text-foreground">
+                Imported from {isESPN ? 'ESPN' : 'Sleeper'}
+              </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 {[imported.name, ...badgeFacts].filter(Boolean).join(' · ')}
               </p>
