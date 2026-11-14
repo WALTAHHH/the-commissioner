@@ -121,7 +121,7 @@ export default async function Home() {
       <footer className="border-t border-border px-4 py-8 text-center text-sm text-muted-foreground">
         <div className="mx-auto max-w-5xl">
           <p>
-            The Commissioner · Phase 1 · Built with Next.js & Supabase
+            The Commissioner · Built with Next.js & Supabase
           </p>
           <p className="mt-2">
             Open‑source fantasy sports platform scaffold.
