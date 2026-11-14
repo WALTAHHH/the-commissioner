@@ -9,10 +9,48 @@ import InviteSlotButton from './invite-slot-button'
 import PendingBadge, { IntendedRoleSuffix } from './pending-badge'
 import RoleBadge from '@/src/components/role-badge'
 import SleeperUnmatchedTeams from '../components/sleeper-unmatched-teams'
+import TeamsView from './teams-view'
 import { getSleeperDisplayData } from '@/src/lib/integrations/sleeper/mapping'
+import { buildTeamMatching } from '@/src/lib/integrations/team-matching'
 import { Users, UserPlus, ArrowLeft, Plug } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
+
+type MembersView = 'members' | 'teams'
+
+/**
+ * View toggle (t_84a46c7f): ?view=teams | ?view=members persists the choice
+ * in the URL (plain links — server-rendered, no client JS, back button
+ * works). Default: Teams when an integration is connected, Members when not.
+ */
+function ViewToggle({ leagueId, view }: { leagueId: string; view: MembersView }) {
+  const base =
+    'rounded-md px-3 py-1.5 text-sm font-medium transition-colors'
+  const active = 'bg-card text-foreground shadow-sm'
+  const inactive = 'text-muted-foreground hover:text-foreground'
+  return (
+    <div
+      className="inline-flex rounded-lg border border-border bg-muted/40 p-1"
+      role="tablist"
+      aria-label="Members page view"
+    >
+      <Link
+        href={`/leagues/${leagueId}/members?view=members`}
+        className={`${base} ${view === 'members' ? active : inactive}`}
+        aria-current={view === 'members' ? 'page' : undefined}
+      >
+        Members
+      </Link>
+      <Link
+        href={`/leagues/${leagueId}/members?view=teams`}
+        className={`${base} ${view === 'teams' ? active : inactive}`}
+        aria-current={view === 'teams' ? 'page' : undefined}
+      >
+        Teams
+      </Link>
+    </div>
+  )
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -28,8 +66,10 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function LeagueMembersPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }) {
   const { id } = await params
 
@@ -47,19 +87,39 @@ export default async function LeagueMembersPage({
   const ctx = await loadLeagueContext(id, user.id)
   if (!ctx) notFound()
 
+  // ?view=teams | ?view=members — anything else falls through to the default.
+  const sp = await searchParams
+  const requested = Array.isArray(sp.view) ? sp.view[0] : sp.view
+  const explicit: MembersView | null =
+    requested === 'teams' || requested === 'members' ? requested : null
+
   const members = await listDirectoryMembers(id)
+
+  // Teams matching reads only the stored sync snapshot (no live API call, no
+  // sync). It is skipped entirely when the URL already says 'members', so the
+  // existing list view keeps exactly its old query load. Without an explicit
+  // param we need it anyway to decide the default view (Teams when an
+  // integration is connected).
+  const matching =
+    explicit === 'members' ? null : await buildTeamMatching(id, members)
+  const view: MembersView = explicit ?? (matching?.provider ? 'teams' : 'members')
 
   // Best-effort Sleeper overlay: maps synced roster owners onto these members
   // by display name. null when no Sleeper connection/snapshot exists, in which
   // case the page renders exactly as before (graceful degradation).
   // Pending slots are excluded from the matcher entirely: there is no account
   // behind them to line a Sleeper roster owner up with yet.
-  const sleeper = await getSleeperDisplayData(
-    id,
-    members
-      .filter((m) => !m.isPlaceholder)
-      .map((m) => ({ id: m.id, displayName: displayName(m) })),
-  )
+  const sleeper =
+    view === 'members'
+      ? await getSleeperDisplayData(
+          id,
+          members
+            .filter((m) => !m.isPlaceholder)
+            .map((m) => ({ id: m.id, displayName: displayName(m) })),
+        )
+      : null
+
+  const teamCount = matching ? matching.results.filter((r) => r.team !== null).length : 0
 
   return (
     <div className="space-y-8">
@@ -75,7 +135,9 @@ export default async function LeagueMembersPage({
         </div>
         <div className="flex items-center gap-4">
           <p className="text-sm text-muted-foreground">
-            {pluralizeCount(members.length, 'active member')}
+            {view === 'members'
+              ? pluralizeCount(members.length, 'active member')
+              : pluralizeCount(teamCount, 'team')}
           </p>
           {ctx.isCommissioner && (
             <Link
@@ -89,8 +151,14 @@ export default async function LeagueMembersPage({
         </div>
       </div>
 
-      {/* Sleeper overlay banner — only when synced data was read */}
-      {sleeper && (
+      {/* View toggle (spec §1): Members list vs Teams grid, persisted in ?view= */}
+      <ViewToggle leagueId={id} view={view} />
+
+      {/* Teams view (spec §2) — read-only grid of integration-matched teams */}
+      {view === 'teams' && matching && <TeamsView matching={matching} />}
+
+      {/* Sleeper overlay banner — members view only, when synced data was read */}
+      {view === 'members' && sleeper && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
             <Plug className="h-3 w-3" aria-hidden="true" />
@@ -111,8 +179,8 @@ export default async function LeagueMembersPage({
         </div>
       )}
 
-      {/* Invite box for commissioner */}
-      {ctx.isCommissioner && (
+      {/* Invite box for commissioner — members view only */}
+      {view === 'members' && ctx.isCommissioner && (
         <div className="rounded-2xl border border-primary/30 bg-primary/10 p-6 dark:border-primary/30 dark:bg-primary/20">
           <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-primary dark:text-primary/90">
             <UserPlus className="h-5 w-5" />
@@ -133,7 +201,7 @@ export default async function LeagueMembersPage({
       )}
 
       {/* Members list */}
-      {members.length === 0 ? (
+      {view === 'members' && (members.length === 0 ? (
         <div className="rounded-2xl border border-border bg-card p-8 text-center">
           <div className="mb-4 flex justify-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
@@ -251,7 +319,7 @@ export default async function LeagueMembersPage({
             )
           })}
         </ul>
-      )}
+      ))}
 
       {/* Sleeper teams with no confident member match (never hidden) */}
       {sleeper && <SleeperUnmatchedTeams teams={sleeper.unmatchedTeams} />}
