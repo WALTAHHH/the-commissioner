@@ -1,7 +1,7 @@
 import { createClient } from '@/src/utils/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Scale } from 'lucide-react'
+import { ArrowLeft, Scale, Receipt } from 'lucide-react'
 import { loadLeagueContext } from '@/src/lib/dashboard'
 import { loadFinancesLedger, loadMembershipId } from '@/src/lib/finances'
 import type { LedgerEntryView } from '@/src/lib/finances'
@@ -108,10 +108,22 @@ export default async function LeagueLedgerPage({
       )}
 
       {withBalances.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            No financial events yet.
+        <div className="rounded-2xl border border-dashed border-border bg-card/50 px-6 py-16 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+            <Receipt className="h-7 w-7 text-muted-foreground" />
+          </div>
+          <h2 className="mt-4 text-lg font-semibold text-foreground">No financial events yet</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Obligations and payments you record appear here as a running ledger.
           </p>
+          {ctx.isCommissioner && (
+            <Link
+              href={`/leagues/${id}/finances/new`}
+              className="mt-6 inline-flex items-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Add the first obligation
+            </Link>
+          )}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-border bg-card">

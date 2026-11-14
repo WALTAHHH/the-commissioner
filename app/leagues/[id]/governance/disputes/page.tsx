@@ -77,6 +77,13 @@ export default async function DisputesPage({
             Anything you want the commissioner to rule on — a trade, a lineup, a
             payout — starts here.
           </p>
+          <Link
+            href={`/leagues/${id}/governance/disputes/new`}
+            className="mt-6 inline-flex items-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            <ShieldAlert className="mr-2 h-4 w-4" />
+            Raise a dispute
+          </Link>
         </div>
       ) : (
         <>

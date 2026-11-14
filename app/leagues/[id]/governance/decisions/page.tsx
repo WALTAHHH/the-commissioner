@@ -1,7 +1,7 @@
 import { createClient } from '@/src/utils/supabase/server'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { FileText, Plus } from 'lucide-react'
+import { FileText, Plus, Gavel } from 'lucide-react'
 import { loadLeagueContext } from '@/src/lib/dashboard'
 import { loadDecisions } from '@/src/lib/governance'
 import { formatDate } from '@/src/lib/display'
@@ -73,6 +73,15 @@ export default async function DecisionsPage({
               ? 'Record a verdict from a closed poll, or write one directly.'
               : 'When the commissioner records a verdict it will appear here.'}
           </p>
+          {ctx.isCommissioner && (
+            <Link
+              href={`/leagues/${id}/governance/decisions/new`}
+              className="mt-6 inline-flex items-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              <Gavel className="mr-2 h-4 w-4" />
+              Record a decision
+            </Link>
+          )}
         </div>
       ) : (
         <ul className="space-y-3">

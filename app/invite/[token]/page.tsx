@@ -109,8 +109,8 @@ export default async function InvitePage({
         {/* Card */}
         <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
           <div className="mb-6 flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900">
-              <Users className="h-7 w-7 text-blue-600 dark:text-blue-400" />
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+              <Users className="h-7 w-7 text-primary" />
             </div>
             <div>
               <p className="text-sm uppercase tracking-wide text-muted-foreground">
@@ -124,11 +124,11 @@ export default async function InvitePage({
 
           {membership ? (
             <>
-              <div className="mb-6 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
-                <p className="font-medium text-green-800 dark:text-green-300">
+              <div className="mb-6 rounded-lg border border-success/30 bg-success/10 p-4">
+                <p className="font-medium text-success">
                   You're already a member of this league.
                 </p>
-                <p className="mt-1 text-sm text-green-700 dark:text-green-400">
+                <p className="mt-1 text-sm text-muted-foreground">
                   You can access the league dashboard below.
                 </p>
               </div>

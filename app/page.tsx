@@ -50,7 +50,7 @@ export default async function Home() {
         <div className="text-center">
           <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-6xl">
             Fantasy sports{' '}
-            <span className="bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
+            <span className="text-primary">
               league management
             </span>{' '}
             reimagined.
@@ -79,8 +79,8 @@ export default async function Home() {
         {/* Feature highlights */}
         <div className="mt-24 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900">
-              <Users className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+              <Users className="h-6 w-6 text-primary" />
             </div>
             <h3 className="text-xl font-semibold text-foreground">
               Invite & Manage Members
@@ -91,8 +91,8 @@ export default async function Home() {
             </p>
           </div>
           <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900">
-              <Sparkles className="h-6 w-6 text-green-600 dark:text-green-400" />
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-success/10">
+              <Sparkles className="h-6 w-6 text-success" />
             </div>
             <h3 className="text-xl font-semibold text-foreground">
               AI‑Powered Insights
@@ -103,8 +103,8 @@ export default async function Home() {
             </p>
           </div>
           <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-900">
-              <Sparkles className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-warning/10">
+              <Sparkles className="h-6 w-6 text-warning" />
             </div>
             <h3 className="text-xl font-semibold text-foreground">
               Commissioner Tools

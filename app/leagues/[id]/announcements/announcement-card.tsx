@@ -130,7 +130,7 @@ export default function AnnouncementCard({
       className={cn(
         'rounded-2xl border p-5 sm:p-6',
         announcement.isPinned
-          ? 'border-amber-300 bg-amber-50/60 dark:border-amber-700/60 dark:bg-amber-900/20'
+          ? 'border-warning/40 bg-warning/10'
           : 'border-border bg-card',
       )}
     >
@@ -139,7 +139,7 @@ export default function AnnouncementCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             {announcement.isPinned && (
-              <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+              <span className="inline-flex items-center gap-1 rounded-md bg-warning/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-warning">
                 <Pin className="h-3 w-3" />
                 Pinned
               </span>
@@ -334,7 +334,7 @@ export default function AnnouncementCard({
  *  pinned section header if styling needs a megaphone glyph later. */
 export function PinnedSectionLabel() {
   return (
-    <span className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+    <span className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-warning">
       <Megaphone className="h-4 w-4" />
       Pinned
     </span>

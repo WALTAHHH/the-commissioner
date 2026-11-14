@@ -92,7 +92,7 @@ export default async function LeagueSettingsPage({ params }: { params: Promise<{
             className="rounded-2xl border border-border bg-card p-6"
           >
             <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
                 {field.icon}
               </div>
               <div>
@@ -109,16 +109,16 @@ export default async function LeagueSettingsPage({ params }: { params: Promise<{
       </div>
 
       {/* Notice */}
-      <div className="rounded-2xl border border-blue-200 bg-blue-50 p-8 dark:border-blue-800 dark:bg-blue-900/20">
+      <div className="rounded-2xl border border-primary/30 bg-primary/10 p-8">
         <div className="flex items-start gap-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-800">
-            <Settings className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/15">
+            <Settings className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-300">
+            <h3 className="text-lg font-semibold text-primary">
               Settings are read‑only in this phase
             </h3>
-            <p className="mt-2 text-blue-800 dark:text-blue-400">
+            <p className="mt-2 text-muted-foreground">
               These fields cannot be edited yet. League renaming, sport/format
               changes, and commissioner hand‑off will arrive in a future release.
             </p>

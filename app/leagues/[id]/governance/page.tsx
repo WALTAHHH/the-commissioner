@@ -1,7 +1,7 @@
 import { createClient } from '@/src/utils/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Gavel, Plus, Scale, ShieldAlert } from 'lucide-react'
+import { Gavel, Plus, Scale, ShieldAlert, FileText } from 'lucide-react'
 import { loadLeagueContext } from '@/src/lib/dashboard'
 import { loadMembershipId } from '@/src/lib/finances'
 import {
@@ -156,9 +156,13 @@ export default async function LeagueGovernancePage({
       <section className="space-y-3">
         <SectionHeading title="Recent decisions" />
         {hub.decisions.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border bg-card/50 px-4 py-6 text-center text-sm text-muted-foreground">
-            No decisions recorded yet.
-          </p>
+          <div className="rounded-2xl border border-dashed border-border bg-card/50 px-4 py-10 text-center">
+            <FileText className="mx-auto h-6 w-6 text-muted-foreground" />
+            <p className="mt-3 text-sm font-medium text-foreground">No decisions recorded yet.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Verdicts you record will show up here.
+            </p>
+          </div>
         ) : (
           <ul className="space-y-2">
             {hub.decisions.map((decision) => (

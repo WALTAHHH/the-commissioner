@@ -97,8 +97,8 @@ export default function InviteMemberButton({ leagueId }: { leagueId: string }) {
       ) : (
         <div className="rounded-2xl border border-border bg-card p-6 shadow-lg">
           <div className="mb-6 flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-950">
-              <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-success/10">
+              <CheckCircle className="h-6 w-6 text-success" />
             </div>
             <div>
               <h3 className="text-lg font-semibold text-foreground">

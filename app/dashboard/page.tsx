@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { listUserLeagues } from '@/src/lib/dashboard'
 import { prettifyLabel, pluralizeCount } from '@/src/lib/display'
+import RoleBadge from '@/src/components/role-badge'
 import RedeemInviteForm from '@/src/components/redeem-invite-form'
 import { Sparkles, Plus, Users, Trophy } from 'lucide-react'
 
@@ -31,7 +32,7 @@ export default async function DashboardPage() {
             Your leagues
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Logged in as: <span className="font-medium">{user.email}</span>
+            Standings, money, rules and votes — one home per league.
           </p>
         </div>
         <Link
@@ -95,14 +96,14 @@ export default async function DashboardPage() {
             {leagues.map((league) => (
               <div
                 key={league.id}
-                className="group rounded-2xl border border-border bg-card p-6 shadow-sm transition-all hover:border-blue-300 hover:shadow-md dark:hover:border-blue-800"
+                className="group rounded-2xl border border-border bg-card p-6 shadow-sm transition-all hover:border-primary/40 hover:shadow-md"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
                     <h2 className="text-xl font-semibold leading-6 text-foreground">
                       <Link
                         href={`/leagues/${league.id}`}
-                        className="hover:text-blue-600 dark:hover:text-blue-400"
+                        className="hover:text-primary"
                       >
                         {league.name}
                       </Link>
@@ -111,11 +112,9 @@ export default async function DashboardPage() {
                       {prettifyLabel(league.sport)} · {prettifyLabel(league.format)}
                     </p>
                   </div>
-                  {league.isCommissioner && (
-                    <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-800 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                      Commissioner
-                    </span>
-                  )}
+                  <RoleBadge
+                    role={league.isCommissioner ? 'commissioner' : league.role ?? 'member'}
+                  />
                 </div>
                 <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
                   <Users className="h-4 w-4" />
