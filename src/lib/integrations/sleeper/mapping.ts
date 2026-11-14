@@ -370,3 +370,133 @@ export async function getSleeperDisplayData(
 
   return { summary, matchByMemberId, unmatchedTeams, mappingAmbiguous: ambiguous }
 }
+
+// ---------- external role (informational only) ----------
+
+/**
+ * Role labels for the *external* platform. Re-declared here rather than shared
+ * so the Sleeper and ESPN modules never import each other; the ESPN twin lives
+ * in `../espn/mapping.ts`.
+ *
+ * This is display data only. It never reads or writes `league_members.role`,
+ * `leagues.commissioner_id`, or any permission check — the app's own roles are
+ * untouched by everything in this section.
+ */
+export type ExternalRole = 'Commissioner' | 'Co-Commissioner' | 'Member'
+
+/**
+ * Flags Sleeper could use for a secondary manager. `GET /league/{id}/users`
+ * today sends only `is_owner` (one owner per league), so 'Co-Commissioner' is
+ * returned only if a payload ever carries one of these — we deliberately do
+ * NOT read roster `co_owners`, which is a *team* co-owner, not a league manager.
+ */
+const SLEEPER_CO_MANAGER_KEYS = ['is_co_owner', 'is_co_manager', 'isLeagueManager'] as const
+
+function rawFlag(member: SleeperMember, keys: readonly string[]): boolean {
+  const candidates: unknown[] = [member.raw, member.metadata]
+  for (const source of candidates) {
+    if (!source || typeof source !== 'object') continue
+    const record = source as Record<string, unknown>
+    if (keys.some((key) => record[key] === true)) return true
+  }
+  return false
+}
+
+function sleeperUserIdOf(member: SleeperMember): string {
+  const fromRaw = member.raw?.user_id
+  return (member.externalId ?? String(fromRaw ?? '')).trim()
+}
+
+/**
+ * The current user's role on Sleeper, read from an already-synced snapshot.
+ *
+ * @param snapshot the parsed snapshot from `integration_sync_log.raw_snapshot`
+ *   (null/undefined tolerated — a league that was never synced has no role to show).
+ * @param myUserId the viewer's Sleeper `user_id` (string or numeric id).
+ * @returns 'Commissioner' when Sleeper marks the user `is_owner`,
+ *   'Co-Commissioner' if a payload ever carries a manager flag, 'Member' for
+ *   any other user found in the league's user list, and null when the snapshot
+ *   or the id is missing or the user is not in that league.
+ *
+ * Never throws: a malformed snapshot degrades to null so the page simply omits
+ * the field.
+ */
+export function getMySleeperRole(
+  snapshot: SleeperSnapshot | null | undefined,
+  myUserId: string | number | null | undefined,
+): ExternalRole | null {
+  try {
+    const members = Array.isArray(snapshot?.members) ? snapshot!.members : []
+    const id = myUserId === null || myUserId === undefined ? '' : String(myUserId).trim()
+    if (!id) return null
+
+    const me = members.find((m) => m && sleeperUserIdOf(m) === id)
+    if (!me) return null
+
+    if (me.isOwner === true || me.raw?.is_owner === true) return 'Commissioner'
+    if (rawFlag(me, SLEEPER_CO_MANAGER_KEYS)) return 'Co-Commissioner'
+    return 'Member'
+  } catch (err) {
+    console.error('getMySleeperRole failed:', err)
+    return null
+  }
+}
+
+/** Names a viewer might be listed under on Sleeper, in priority order. */
+function viewerNameCandidates(names: Array<string | null | undefined>): string[] {
+  const out: string[] = []
+  for (const name of names) {
+    const key = typeof name === 'string' ? normalizeDisplayName(name) : ''
+    if (key && !out.includes(key)) out.push(key)
+  }
+  return out
+}
+
+/**
+ * Sleeper user ids whose `display_name` matches one of the viewer's names.
+ *
+ * Sleeper ids have no declared link to our auth users (see the mapping story
+ * at the top of this file), so this stays best-effort: a hit is only usable
+ * when exactly ONE Sleeper user matches across all of the viewer's names.
+ */
+export function findSleeperUserIdsForNames(
+  snapshot: SleeperSnapshot,
+  names: Array<string | null | undefined>,
+): string[] {
+  const candidates = viewerNameCandidates(names)
+  if (candidates.length === 0) return []
+
+  const hits = new Set<string>()
+  for (const member of Array.isArray(snapshot.members) ? snapshot.members : []) {
+    if (!member) continue
+    const key = normalizeDisplayName(member.displayName ?? '')
+    if (key && candidates.includes(key)) hits.add(sleeperUserIdOf(member))
+  }
+  return Array.from(hits).filter(Boolean)
+}
+
+/**
+ * Viewer's Sleeper role for a league, or null when it is not determinable.
+ *
+ * Reads the existing successful snapshot only (`getSyncedSleeperSnapshot`) — no
+ * API call, no sync triggered. Returns null when the league was never synced,
+ * when none of the viewer's names matches a Sleeper user, or when the match is
+ * ambiguous — in all of those cases the page shows nothing.
+ */
+export async function getMySleeperRoleForViewer(
+  leagueId: string,
+  viewerNames: Array<string | null | undefined>,
+): Promise<ExternalRole | null> {
+  try {
+    const synced = await getSyncedSleeperSnapshot(leagueId)
+    if (!synced) return null
+
+    const matches = findSleeperUserIdsForNames(synced.snapshot, viewerNames)
+    if (matches.length !== 1) return null
+
+    return getMySleeperRole(synced.snapshot, matches[0])
+  } catch (err) {
+    console.error('getMySleeperRoleForViewer unexpected error:', err)
+    return null
+  }
+}

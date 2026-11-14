@@ -1,13 +1,14 @@
 import { createClient } from '@/src/utils/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { loadLeagueContext } from '@/src/lib/dashboard'
+import { loadLeagueContext, fetchIdentities } from '@/src/lib/dashboard'
 import { isUuid } from '@/src/lib/invitations'
 import { formatDate, prettifyLabel } from '@/src/lib/display'
 import {
   getProviderConnection,
   fetchSleeperSnapshot,
 } from '@/src/lib/integrations/connections'
+import { getMySleeperRoleForViewer } from '@/src/lib/integrations/sleeper/mapping'
 import ConnectSleeperForm from './connect-sleeper-form'
 import SyncNowButton from './sync-now-button'
 import DisconnectButton from './disconnect-button'
@@ -80,6 +81,19 @@ export default async function SleeperConnectionPage({
 
   const snapshot = isConnected
     ? await fetchSleeperSnapshot(connection.externalLeagueId)
+    : null
+
+  // Informational only: the viewer's role *on Sleeper*, read from the snapshot
+  // the last sync already stored (no API call, no sync triggered). Null — and
+  // so the field is omitted — when the league was never synced or the viewer
+  // cannot be matched to a single Sleeper user. It never touches our own roles.
+  const myIdentity = isConnected ? (await fetchIdentities([user.id])).get(user.id) : undefined
+  const sleeperRole = isConnected
+    ? await getMySleeperRoleForViewer(id, [
+        myIdentity?.fullName,
+        myIdentity?.name,
+        myIdentity?.nickname,
+      ])
     : null
 
   return (
@@ -174,6 +188,17 @@ export default async function SleeperConnectionPage({
                     </dd>
                   </div>
                 </dl>
+
+                {sleeperRole && (
+                  <p className="mt-6 text-sm text-muted-foreground">
+                    Your Sleeper role:{' '}
+                    <span className="font-medium text-foreground">{sleeperRole}</span>
+                    <span className="ml-2 text-xs">
+                      From the last Sleeper sync — informational only, your role in
+                      The Commissioner is unchanged.
+                    </span>
+                  </p>
+                )}
               </>
             ) : (
               /* Details unavailable — keep the raw connection visible so
