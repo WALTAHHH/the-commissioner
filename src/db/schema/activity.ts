@@ -48,6 +48,11 @@ export const ACTIVITY_EVENT_TYPES = [
   'dispute_raised',
   'dispute_resolved',
   'decision_recorded',
+  // History
+  'season_record_created',
+  'season_record_updated',
+  'award_created',
+  'season_recap_upserted',
 ] as const;
 
 export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[number];

@@ -64,6 +64,13 @@
       "when": 1794625342278,
       "tag": "0008_announcements",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794630000000,
+      "tag": "0009_history",
+      "breakpoints": true
     }
   ]
 }
