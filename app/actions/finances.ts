@@ -1192,6 +1192,8 @@ export interface CreatePrizeInput {
   description: string
   /** required for payouts; recognition prizes never carry money */
   amount?: number | null
+  /** optional winner member id — attached at creation as awarded-now */
+  winnerId?: string
 }
 
 export interface CreatePrizeResult {
@@ -1201,6 +1203,7 @@ export interface CreatePrizeResult {
 
 export interface AwardPrizeResult {
   prizeId?: string
+  obligationId?: string
   error?: string
 }
 
@@ -1263,6 +1266,7 @@ export async function createPrize(
     weekNumber,
     description,
     amount,
+    winnerId,
   }: CreatePrizeInput,
 ): Promise<CreatePrizeResult> {
   const user = await requireUser()
@@ -1331,6 +1335,20 @@ export async function createPrize(
   }
   // recognition: no money, ignore anything sent (normalizedAmount stays null).
 
+  // --- Optional winner at creation -----------------------------------------
+  // Mirrors feat/prizes-schema-actions (the contract prizes-ui was written
+  // against): a winner may be attached up front, recorded as awarded now.
+  let winnerMemberId: string | null = null
+  if (winnerId !== undefined && winnerId !== '') {
+    if (!isUuid(winnerId)) {
+      return { error: 'Invalid winner ID.' }
+    }
+    if (!(await winnerInLeague(leagueId, winnerId))) {
+      return { error: 'Winner not found in this league.' }
+    }
+    winnerMemberId = winnerId
+  }
+
   if (!(await requireCommissioner(user.id, leagueId))) {
     return { error: 'You are not authorized to create prizes in this league.' }
   }
@@ -1344,6 +1362,8 @@ export async function createPrize(
     type,
     scope,
     week_number: normalizedWeek,
+    winner_member_id: winnerMemberId,
+    awarded_at: winnerMemberId ? new Date().toISOString() : null,
   }
 
   const { data, error } = await db
@@ -1383,7 +1403,10 @@ export async function createPrize(
  */
 export async function awardPrize(
   prizeId: string,
-  winnerId: string,
+  {
+    winnerId,
+    createObligation = false,
+  }: { winnerId: string; createObligation?: boolean },
 ): Promise<AwardPrizeResult> {
   const user = await requireUser()
   if (!user) {
@@ -1419,15 +1442,55 @@ export async function awardPrize(
     return { error: 'Failed to award prize.' }
   }
 
+  // Optionally book the payout (feat/prizes-schema-actions contract).
+  // Both `prize_structure.amount` and `financial_obligations.amount` are
+  // numeric(12,2) DOLLARS (PostgREST may serialise as number or string) —
+  // no unit conversion, just normalisation through toNumber.
+  let obligationId: string | undefined
+  const payoutAmount =
+    prize.type === 'payout' && prize.amount !== null && prize.amount !== undefined
+      ? toNumber(prize.amount)
+      : null
+  if (createObligation) {
+    if (payoutAmount === null || !Number.isFinite(payoutAmount) || payoutAmount <= 0) {
+      // Nothing to pay: the prize was awarded, but a payout obligation makes
+      // no sense (recognition, or a payout with no amount). Skip silently
+      // rather than fail the award that already succeeded.
+    } else {
+      const { data: obligation, error: obligationError } = await db
+        .from('financial_obligations')
+        .insert({
+          league_id: prize.league_id,
+          member_id: winnerId,
+          amount: payoutAmount,
+          description: `Prize payout: ${prize.description}`,
+          created_by: user.id,
+        })
+        .select('id')
+        .single()
+      if (obligationError || !obligation) {
+        console.error('awardPrize obligation insert error:', obligationError)
+        // The prize is already awarded; report both facts so the commissioner
+        // can complete the money entry by hand if they want.
+        return {
+          prizeId,
+          error:
+            'The prize was awarded, but the payout obligation could not be recorded. Add it manually under Finances.',
+        }
+      }
+      obligationId = (obligation as unknown as { id: string }).id
+    }
+  }
+
   await recordActivity(
     prize.league_id,
     user.id,
     'prize_awarded',
-    `Prize awarded: “${prize.description}”`,
-    { prizeId, winnerId },
+    `Prize awarded: “${prize.description}”${payoutAmount !== null ? ` ($${payoutAmount.toFixed(2)})` : ''}`,
+    { prizeId, winnerId, obligationId, amount: payoutAmount },
   )
 
-  return { prizeId }
+  return { prizeId, obligationId }
 }
 
 /**

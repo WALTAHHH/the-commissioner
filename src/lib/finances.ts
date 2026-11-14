@@ -602,6 +602,43 @@ export async function loadPrizes(
 }
 
 /**
+ * One prize by id, scoped to the league: a foreign id returns null so the
+ * award page can 404 instead of leaking across leagues. Winner name resolved
+ * exactly as in `loadPrizes`. Hotfix for the prizes-ui import that landed
+ * against a not-yet-existing loader (see main's award page at f8b7206).
+ */
+export async function loadPrize(
+  leagueId: string,
+  prizeId: string,
+): Promise<PrizeView | null> {
+  const { data, error } = await db
+    .from('prize_structure')
+    .select('*')
+    .eq('league_id', leagueId)
+    .eq('id', prizeId)
+    .maybeSingle()
+  if (error) {
+    console.error('loadPrize error:', error)
+    return null
+  }
+  if (!data) return null
+
+  const row = data as unknown as PrizeStructureRow
+  const winnerMemberIds = row.winner_member_id ? [row.winner_member_id] : []
+  const memberMap = await loadMemberDisplayMap(leagueId, winnerMemberIds)
+  const identities = await fetchIdentities(
+    Array.from(
+      new Set(
+        Array.from(memberMap.values())
+          .map((m) => m.userId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ),
+  )
+  return toPrizeView(row, memberMap, identities)
+}
+
+/**
  * Financial categories of a league — for the create form's category select
  * and the hub's category grouping label sanity. Ordered by name.
  */
