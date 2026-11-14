@@ -15,6 +15,7 @@ import {
   normalizeMembers,
   normalizeRosters,
 } from './normalize';
+import { normalizeCookieValue } from './snapshot';
 import type {
   ESPNDraft,
   ESPNLeague,
@@ -219,6 +220,39 @@ export class ESPNAdapter {
       views: ['mDraftDetail', 'mTeam', 'mRoster'],
     });
     return normalizeDraft(payload);
+  }
+
+  /**
+   * Fetch the authenticated user's role in the league (Commissioner/Member).
+   * Requires cookies (private league). Returns null for public leagues,
+   * when cookies missing, or if the role cannot be determined.
+   */
+  async getMyRole(leagueId: number, seasonYear: number): Promise<'Commissioner' | 'Member' | null> {
+    if (!this.hasCookies) {
+      return null;
+    }
+    try {
+      const payload = await this.getLeaguePayload(leagueId, seasonYear, {
+        views: ['fll'],
+      });
+      const members = payload.members ?? [];
+      const swid = this.swid;
+      if (!swid) return null;
+      const normalizedSwid = normalizeCookieValue(swid, 'SWID').replace(/[{}]/g, '').trim().toUpperCase();
+      for (const member of members) {
+        const memberId = member.id;
+        if (typeof memberId !== 'string') continue;
+        const normalizedMemberId = normalizeCookieValue(memberId, 'SWID').replace(/[{}]/g, '').trim().toUpperCase();
+        if (normalizedMemberId === normalizedSwid) {
+          const isLeagueManager = member.isLeagueManager === true;
+          return isLeagueManager ? 'Commissioner' : 'Member';
+        }
+      }
+      return null;
+    } catch (err) {
+      // Fail gracefully: any error means we cannot determine role.
+      return null;
+    }
   }
 
   /** GET the league endpoint with the requested `view` params, parsed. */

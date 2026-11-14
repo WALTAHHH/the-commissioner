@@ -84,7 +84,15 @@ export async function syncESPNLeague(connectionId: string): Promise<string> {
       seasonYear,
       league.scoringPeriodId,
     );
-    rawSnapshot = { league, members, rosters, matchups };
+    let myRole: 'Commissioner' | 'Member' | null = null;
+    if (cookies) {
+      try {
+        myRole = await adapter.getMyRole(leagueIdNumber, seasonYear);
+      } catch {
+        // ignore
+      }
+    }
+    rawSnapshot = { league, members, rosters, matchups, myRole };
 
     // 4. Bump last_synced_at, and adopt the season ESPN reports when we had to
     //    guess it (rows written before the season_year column existed).

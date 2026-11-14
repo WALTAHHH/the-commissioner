@@ -152,6 +152,12 @@ export function getMyESPNRole(snapshot: unknown, swid: unknown): ExternalRole | 
     const me = normalizeESPNUserId(swid)
     if (!root || !me) return null
 
+    // If snapshot already carries a pre-computed role, trust it.
+    const storedRole = root.myRole
+    if (storedRole === 'Commissioner' || storedRole === 'Member' || storedRole === 'Co-Commissioner') {
+      return storedRole
+    }
+
     const members = memberRecords(root)
     const teams = ownerIds(root)
     const isMemberOfLeague =
