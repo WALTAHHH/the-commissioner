@@ -16,6 +16,7 @@ import {
   Activity,
   Wallet,
   Scale,
+  Megaphone,
 } from 'lucide-react'
 import SignOutButton from './SignOutButton'
 import { cn } from 'cn'
@@ -70,6 +71,12 @@ export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavPro
       href: leagueId ? `/leagues/${leagueId}/rules` : null,
       icon: <BookOpen className="h-5 w-5" />,
       active: inLeague('rules'),
+    },
+    {
+      label: 'Announcements',
+      href: leagueId ? `/leagues/${leagueId}/announcements` : null,
+      icon: <Megaphone className="h-5 w-5" />,
+      active: inLeague('announcements'),
     },
     {
       label: 'Activity',
