@@ -5,6 +5,7 @@ import { createClient } from '@/src/utils/supabase/server'
 import { slugify, randomSuffix } from '@/src/lib/slug'
 import { recordActivity } from '@/src/lib/activity'
 import { connectESPN } from '@/app/actions/integrations'
+import { isUuid } from '@/src/lib/invitations'
 import {
   DEFAULT_SPORT,
   DEFAULT_FORMAT,
@@ -182,4 +183,99 @@ export async function createLeague(
 
   console.error('createLeague failed', lastError)
   return { error: 'Could not create the league. Please try again.' }
+}
+
+async function requireUser() {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  return user
+}
+
+async function requireCommissioner(userId: string, leagueId: string): Promise<boolean> {
+  const { data, error } = await db
+    .from('leagues')
+    .select('commissioner_id')
+    .eq('id', leagueId)
+    .maybeSingle()
+  if (error || !data) return false
+  return (data as unknown as { commissioner_id: string }).commissioner_id === userId
+}
+
+export interface UpdateLeagueFinancialsResult {
+  error?: string
+}
+
+export async function updateLeagueFinancials(
+  leagueId: string,
+  {
+    financialVisibility,
+    paymentInstructions,
+    currency,
+  }: {
+    financialVisibility?: string
+    paymentInstructions?: string
+    currency?: string
+  }
+): Promise<UpdateLeagueFinancialsResult> {
+  const user = await requireUser()
+  if (!user) {
+    return { error: 'You must be signed in.' }
+  }
+  if (!isUuid(leagueId)) {
+    return { error: 'Invalid league ID.' }
+  }
+
+  const isCommissioner = await requireCommissioner(user.id, leagueId)
+  if (!isCommissioner) {
+    return { error: 'Only the commissioner can update financial settings.' }
+  }
+
+  // Validate financialVisibility
+  const allowedVisibilities = ['full_transparency', 'admin_only', 'members_see_own', 'role_based']
+  if (financialVisibility !== undefined && !allowedVisibilities.includes(financialVisibility)) {
+    return { error: 'Invalid financial visibility value.' }
+  }
+
+  // Validate paymentInstructions length
+  if (paymentInstructions !== undefined && paymentInstructions.length > 1000) {
+    return { error: 'Payment instructions must be at most 1000 characters.' }
+  }
+
+  // Validate currency length
+  if (currency !== undefined && currency.length > 10) {
+    return { error: 'Currency code must be at most 10 characters.' }
+  }
+
+  const updates: Record<string, any> = {}
+  if (financialVisibility !== undefined) updates.financial_visibility = financialVisibility
+  if (paymentInstructions !== undefined) updates.payment_instructions = paymentInstructions
+  if (currency !== undefined) updates.currency = currency
+
+  // If no updates, early success
+  if (Object.keys(updates).length === 0) {
+    return {}
+  }
+
+  const { error } = await db
+    .from('leagues')
+    .update(updates)
+    .eq('id', leagueId)
+
+  if (error) {
+    console.error('updateLeagueFinancials failed:', error)
+    return { error: 'Failed to update financial settings.' }
+  }
+
+  // Record activity
+  await recordActivity(
+    leagueId,
+    user.id,
+    'league_settings_changed',
+    'Financial settings updated',
+    updates,
+  )
+
+  return {}
 }
