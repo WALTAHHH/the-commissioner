@@ -2,7 +2,7 @@ import { createClient } from '@/src/utils/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
-import { loadLeagueContext, listActiveMembers } from '@/src/lib/dashboard'
+import { loadLeagueContext, listDirectoryMembers } from '@/src/lib/dashboard'
 import { memberDisplayName, loadSeasonView } from '@/src/lib/history'
 import { isUuid } from '@/src/lib/invitations'
 import SeasonRecordForm from '../../season-record-form'
@@ -46,7 +46,7 @@ export default async function EditSeasonPage({
 
   const [existing, members] = await Promise.all([
     loadSeasonView(id, seasonYear),
-    listActiveMembers(id),
+    listDirectoryMembers(id),
   ])
 
   const memberOptions = members.map((m) => ({ id: m.id, label: memberDisplayName(m) }))

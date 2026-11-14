@@ -24,6 +24,7 @@
  */
 
 import { db } from '@/src/lib/db'
+import { selectRowsWithColumnFallback } from '@/src/lib/placeholder'
 import type {
   LeagueMemberRow,
   LeagueRow,
@@ -59,6 +60,19 @@ export type MemberRow = {
   fullName: string | null
   name: string | null
   nickname: string | null
+  /**
+   * Placeholder-slot fields (migration 0010). OPTIONAL: listActiveMembers
+   * never sets them (existing consumers — dashboard preview, history pickers,
+   * member-name maps — keep rendering exactly as before), and
+   * listDirectoryMembers fills them for reserved seats so the directory can
+   * badge them as Pending. `displayName()` only honours placeholderName on
+   * rows from the directory reader, which is why the readers rather than the
+   * mapper decide when the slot name is passed through.
+   */
+  isPlaceholder?: boolean
+  placeholderName?: string | null
+  placeholderEmail?: string | null
+  placeholderNotes?: string | null
 }
 
 export type SeasonSource = 'current' | 'latest' | 'inferred'
@@ -224,6 +238,12 @@ export async function countActiveMembers(leagueId: string): Promise<number> {
 /**
  * Active members, oldest member first (directory order, Phase 1 / T4).
  * `limit` caps the dashboard preview; the full directory passes none.
+ *
+ * Placeholder slots are NOT selected here: this reader's column list is the
+ * pre-0010 one so it keeps working on deployments where migration 0010 has
+ * not been applied, and its consumers (preview counts, history pickers)
+ * would have no use for a slot anyway. The member directory page uses
+ * listDirectoryMembers instead, which includes slots.
  */
 export async function listActiveMembers(
   leagueId: string,
@@ -252,10 +272,75 @@ export async function listActiveMembers(
     'id' | 'role' | 'team_name' | 'joined_at' | 'user_id'
   >[]
 
-  const identities = await fetchIdentities(members.map((m) => m.user_id))
+  return mapMembersWithIdentities(members)
+}
+
+/**
+ * Full directory roster: active membership rows AND unclaimed placeholder
+ * slots (migration 0010), oldest first. Slots carry isPlaceholder plus the
+ * placeholder_* display fields; claimed slots come back as ordinary rows
+ * (isPlaceholder false) because the claim flips the same row in place.
+ *
+ * Falls back to the pre-0010 column list when the migration has not been
+ * applied yet, degrading to exactly what listActiveMembers returns rather
+ * than blanking the directory.
+ */
+export async function listDirectoryMembers(leagueId: string): Promise<MemberRow[]> {
+  const { rows, error } = await selectRowsWithColumnFallback<DirectoryMemberRow>(
+    (columns) =>
+      db
+        .from('league_members')
+        .select(columns)
+        .eq('league_id', leagueId)
+        .eq('status', 'active')
+        .order('joined_at', { ascending: true }),
+    'id, role, team_name, joined_at, user_id, is_placeholder, placeholder_name, placeholder_email, placeholder_notes',
+    'id, role, team_name, joined_at, user_id',
+  )
+  if (error) {
+    console.error('listDirectoryMembers error:', error)
+    return []
+  }
+
+  return mapMembersWithIdentities(rows, { withSlotFields: true })
+}
+
+/** A league_members row as the directory selects it: base columns always, slot columns only post-0010. */
+type DirectoryMemberRow = Pick<
+  LeagueMemberRow,
+  'id' | 'role' | 'team_name' | 'joined_at' | 'user_id'
+> &
+  Partial<
+    Pick<
+      LeagueMemberRow,
+      'is_placeholder' | 'placeholder_name' | 'placeholder_email' | 'placeholder_notes'
+    >
+  >
+
+/**
+ * Shared row → MemberRow mapping. user_id is nullable since 0010 (slots have
+ * no account); identity lookups only run for rows that actually have one, so
+ * a page full of pending slots costs zero GoTrue calls.
+ *
+ * `withSlotFields` is deliberate: only the directory reader passes it, so
+ * `displayName()` sees placeholderName solely where the slot semantics are
+ * wanted. History pickers and award selects keep naming a slot by its team
+ * or email fallback through the untouched listActiveMembers path.
+ */
+async function mapMembersWithIdentities(
+  members: readonly DirectoryMemberRow[],
+  options: { withSlotFields?: boolean } = {},
+): Promise<MemberRow[]> {
+  const identities = await fetchIdentities(
+    members
+      .map((m) => m.user_id)
+      .filter((id): id is string => typeof id === 'string'),
+  )
 
   return members.map((member) => {
-    const user = identities.get(member.user_id)
+    const user = member.user_id
+      ? identities.get(member.user_id) ?? null
+      : null
     return {
       id: member.id,
       role: member.role,
@@ -265,6 +350,14 @@ export async function listActiveMembers(
       fullName: user?.fullName ?? null,
       name: user?.name ?? null,
       nickname: user?.nickname ?? null,
+      ...(options.withSlotFields
+        ? {
+            isPlaceholder: member.is_placeholder === true,
+            placeholderName: member.placeholder_name ?? null,
+            placeholderEmail: member.placeholder_email ?? null,
+            placeholderNotes: member.placeholder_notes ?? null,
+          }
+        : {}),
     }
   })
 }

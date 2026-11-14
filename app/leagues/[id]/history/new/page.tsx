@@ -1,7 +1,7 @@
 import { createClient } from '@/src/utils/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { loadLeagueContext, listActiveMembers, resolveSeason } from '@/src/lib/dashboard'
+import { loadLeagueContext, listDirectoryMembers, resolveSeason } from '@/src/lib/dashboard'
 import { memberDisplayName } from '@/src/lib/history'
 import { isUuid } from '@/src/lib/invitations'
 import SeasonRecordForm from '../season-record-form'
@@ -34,7 +34,7 @@ export default async function NewSeasonRecordPage({
   if (!ctx.isCommissioner) redirect(`/leagues/${id}/history`)
 
   const [members, season] = await Promise.all([
-    listActiveMembers(id),
+    listDirectoryMembers(id),
     resolveSeason(id),
   ])
 

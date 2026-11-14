@@ -9,6 +9,8 @@ type JoinedState = {
   leagueId: string
   leagueName: string
   alreadyMember: boolean
+  /** What happened to a placeholder seat linked to this invite, if any. */
+  note?: string
 }
 
 export default function JoinLeagueButton({
@@ -38,6 +40,7 @@ export default function JoinLeagueButton({
       leagueId: result.leagueId,
       leagueName: result.leagueName ?? leagueName,
       alreadyMember: result.alreadyMember === true,
+      note: result.note,
     })
   }
 
@@ -55,7 +58,7 @@ export default function JoinLeagueButton({
                 : `You're in. Welcome to ${joined.leagueName}.`}
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              You can now access the league dashboard.
+              {joined.note ?? 'You can now access the league dashboard.'}
             </p>
           </div>
         </div>

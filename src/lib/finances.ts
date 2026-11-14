@@ -22,6 +22,7 @@
 import { db } from '@/src/lib/db'
 import { fetchIdentities } from '@/src/lib/dashboard'
 import { displayName } from '@/src/lib/display'
+import { selectRowsWithColumnFallback } from '@/src/lib/placeholder'
 import type {
   FinancialCategoryRow,
   FinancialObligationRow,
@@ -165,6 +166,8 @@ function deriveStatus(
 type MemberDisplay = {
   userId: string | null
   teamName: string | null
+  /** placeholder_name while the row is an unclaimed slot (migration 0010). */
+  slotName: string | null
 }
 
 async function loadMemberDisplayMap(
@@ -173,30 +176,41 @@ async function loadMemberDisplayMap(
 ): Promise<Map<string, MemberDisplay>> {
   const map = new Map<string, MemberDisplay>()
   if (memberIds.length === 0) return map
-  const { data, error } = await db
-    .from('league_members')
-    .select('id, league_id, user_id, role, team_name, status, joined_at')
-    .eq('league_id', leagueId)
-    .in('id', memberIds)
+  const { rows, error } = await selectRowsWithColumnFallback<LeagueMemberRow>(
+    (columns) =>
+      db
+        .from('league_members')
+        .select(columns)
+        .eq('league_id', leagueId)
+        .in('id', memberIds),
+    'id, league_id, user_id, role, team_name, status, joined_at, is_placeholder, placeholder_name',
+    'id, league_id, user_id, role, team_name, status, joined_at',
+  )
   if (error) {
     console.error('finances members lookup error:', error)
     return map // non-fatal: rows still render with fallback names
   }
-  for (const row of (data ?? []) as unknown as LeagueMemberRow[]) {
-    map.set(row.id, { userId: row.user_id, teamName: row.team_name })
+  for (const row of rows) {
+    map.set(row.id, {
+      userId: row.user_id,
+      teamName: row.team_name,
+      slotName: row.is_placeholder === true ? (row.placeholder_name ?? null) : null,
+    })
   }
   return map
 }
 
 /**
- * Member name: linked user's display name, else team name, else unknown.
- * Identities are already resolved by the caller's batched fetch.
+ * Member name: placeholder display name for reserved seats (0010), else the
+ * linked user's display name, else team name, else unknown. Identities are
+ * already resolved by the caller's batched fetch.
  */
 function memberName(
   display: MemberDisplay | undefined,
   identities: Map<string, UserIdentityRow>,
 ): string {
   if (!display) return UNKNOWN_MEMBER
+  if (display.slotName) return display.slotName
   if (display.userId) {
     const identity = identities.get(display.userId)
     if (identity) return displayName(identity)
@@ -480,25 +494,38 @@ export async function loadFinancialCategories(
 /**
  * Active members a bulk/single obligation can target. Commissioner-only form
  * fetches this; ids are membership rows, matching the action contract.
+ * Placeholder slots (0010) appear too — recording a debt against a reserved
+ * seat is the point of making one — labelled by their slot name.
  */
 export async function loadMemberOptions(leagueId: string): Promise<MemberOptionView[]> {
-  const { data, error } = await db
-    .from('league_members')
-    .select('id, league_id, user_id, role, team_name, status, joined_at')
-    .eq('league_id', leagueId)
-    .eq('status', 'active')
-    .order('joined_at', { ascending: true })
+  const { rows, error } = await selectRowsWithColumnFallback<LeagueMemberRow>(
+    (columns) =>
+      db
+        .from('league_members')
+        .select(columns)
+        .eq('league_id', leagueId)
+        .eq('status', 'active')
+        .order('joined_at', { ascending: true }),
+    'id, league_id, user_id, role, team_name, status, joined_at, is_placeholder, placeholder_name',
+    'id, league_id, user_id, role, team_name, status, joined_at',
+  )
   if (error) {
     console.error('loadMemberOptions error:', error)
     return []
   }
-  const rows = (data ?? []) as unknown as LeagueMemberRow[]
   const identities = await fetchIdentities(
     rows.map((r) => r.user_id).filter((id): id is string => Boolean(id)),
   )
   return rows.map((r) => ({
     memberId: r.id,
-    displayName: memberName({ userId: r.user_id, teamName: r.team_name }, identities),
+    displayName: memberName(
+      {
+        userId: r.user_id,
+        teamName: r.team_name,
+        slotName: r.is_placeholder === true ? (r.placeholder_name ?? null) : null,
+      },
+      identities,
+    ),
     teamName: r.team_name,
   }))
 }
