@@ -37,6 +37,13 @@ export const ACTIVITY_EVENT_TYPES = [
   // Integrations
   'integration_connected',
   'integration_synced',
+  // Governance
+  'poll_created',
+  'vote_cast',
+  'poll_closed',
+  'dispute_raised',
+  'dispute_resolved',
+  'decision_recorded',
 ] as const;
 
 export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[number];

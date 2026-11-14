@@ -165,6 +165,59 @@ export type ActivityEventRow = {
   created_at: string
 }
 
+export type PollRow = {
+  id: string
+  league_id: string
+  created_by: string
+  title: string
+  description: string | null
+  type: string
+  status: string
+  threshold: string
+  custom_threshold: number | null
+  voting_window_hours: number
+  created_at: string
+  closes_at: string | null
+  closed_at: string | null
+}
+
+export type PollOptionRow = {
+  id: string
+  poll_id: string
+  text: string
+  display_order: number
+}
+
+export type PollVoteRow = {
+  id: string
+  poll_id: string
+  option_id: string
+  member_id: string
+  cast_at: string
+}
+
+export type DecisionRow = {
+  id: string
+  league_id: string
+  poll_id: string | null
+  title: string
+  description: string
+  outcome: string
+  recorded_by: string
+  recorded_at: string
+}
+
+export type DisputeRow = {
+  id: string
+  league_id: string
+  raised_by: string
+  description: string
+  status: string
+  resolution: string | null
+  resolved_by: string | null
+  resolved_at: string | null
+  created_at: string
+}
 
 /** The subset of `auth.users` we can reach: GoTrue admin API, not PostgREST. */
 export type UserIdentityRow = {
