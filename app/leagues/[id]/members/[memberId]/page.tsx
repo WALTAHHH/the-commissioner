@@ -5,20 +5,22 @@ import { loadLeagueContext, listDirectoryMembers } from '@/src/lib/dashboard'
 import { displayName, formatDate, prettifyLabel } from '@/src/lib/display'
 import { isUuid } from '@/src/lib/invitations'
 import { buildTeamMatching } from '@/src/lib/integrations/team-matching'
+import { loadMemberObligationsSection } from '@/src/lib/member-obligations'
 import RoleBadge from '@/src/components/role-badge'
 import PendingBadge, { IntendedRoleSuffix } from '../pending-badge'
+import MemberObligationsSection from './obligations-section'
 import { ArrowLeft, Plug, Users } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * Member profile — page shell + membership header (t_1e44c664).
+ * Member profile — page shell + membership header + the Obligations section.
  *
- * Header only: display name, team name, league role badge, platform role
- * (when the league's integration snapshot makes one explicit), and joined
- * date. The record sections (obligations, votes, awards, activity) are added
- * by their own cards; this shell is deliberately just the identity block so
- * those land as independent sections below it.
+ * Header: display name, team name, league role badge, platform role (when the
+ * league's integration snapshot makes one explicit), and joined date. The
+ * remaining record sections (votes, awards, activity) are added by their own
+ * cards below; this shell is deliberately just the identity block plus the
+ * Obligations section (t_8965695e) so those land as independent sections.
  *
  * Visibility: any active member of the league may open a profile
  * (permission model `membership | member | view`). Access is gated by
@@ -95,6 +97,17 @@ export default async function MemberProfilePage({
   const pending = member.isPlaceholder === true
   const isCommissioner = ctx.isCommissioner
 
+  // Obligations are ACL-resolved in their own module: the loader decides
+  // whether this viewer may see this member's money at all (honouring the
+  // league's `financial_visibility`), so the page never branches on it — the
+  // section renders its own restricted state when the viewer is not entitled.
+  const obligations = await loadMemberObligationsSection({
+    leagueId: id,
+    memberId,
+    viewerUserId: user.id,
+    viewerIsCommissioner: isCommissioner,
+  })
+
   return (
     <div className="space-y-8">
       {/* Back to directory */}
@@ -166,6 +179,13 @@ export default async function MemberProfilePage({
           </div>
         </div>
       </div>
+
+      {/* Obligations (finances) — read-only; writes live in the finances hub. */}
+      <MemberObligationsSection
+        leagueId={id}
+        memberName={displayName(member)}
+        view={obligations}
+      />
 
       {/* Back link */}
       <div className="border-t border-border pt-6">
