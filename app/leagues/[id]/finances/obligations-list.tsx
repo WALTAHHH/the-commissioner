@@ -1,11 +1,21 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { BadgeCheck, ChevronDown } from 'lucide-react'
+import { BadgeCheck, ChevronDown, Mail } from 'lucide-react'
 import type { FinancesObligationView } from '@/src/lib/finances'
 import { formatMoney } from '@/src/lib/display'
+import { sendDueReminders } from '@/app/actions/finances'
 import RecordPaymentForm from './record-payment-form'
 import StatusBadge from './status-badge'
+
+/** Inline per-row outcome of a "Send reminder" click. */
+type ReminderOutcome = { tone: 'ok' | 'warn' | 'err'; message: string }
+
+const REMINDER_TONE_CLASS: Record<ReminderOutcome['tone'], string> = {
+  ok: 'text-emerald-600',
+  warn: 'text-muted-foreground',
+  err: 'text-destructive',
+}
 
 /**
  * The obligations list (Finances-2 hub).
@@ -14,18 +24,61 @@ import StatusBadge from './status-badge'
  * (the page scopes the query before this ever sees data). Rows grouped by
  * member or by category — grouping is pure client state over the flat
  * payload, so the toggle costs no round trip. Each row expands payment
- * history; "Record payment" is inline and commissioner-only.
+ * history; "Record payment" and "Send reminder" are inline and
+ * commissioner-only.
  */
 export default function ObligationsList({
   obligations,
   isCommissioner,
+  leagueId,
 }: {
   obligations: FinancesObligationView[]
   isCommissioner: boolean
+  leagueId: string
 }) {
   const [grouping, setGrouping] = useState<'member' | 'category'>('member')
   const [openPaymentFor, setOpenPaymentFor] = useState<string | null>(null)
   const [expandedPaymentsFor, setExpandedPaymentsFor] = useState<string | null>(null)
+  const [remindingFor, setRemindingFor] = useState<string | null>(null)
+  const [reminderOutcome, setReminderOutcome] = useState<
+    Record<string, ReminderOutcome>
+  >({})
+
+  /**
+   * Send a dues reminder for one obligation. Best-effort on the server (it
+   * never throws for a failed send), so this only has to render an honest,
+   * per-row result: sent / no email on file / failed.
+   */
+  async function sendReminder(o: FinancesObligationView) {
+    setRemindingFor(o.id)
+    setReminderOutcome((prev) => {
+      const next = { ...prev }
+      delete next[o.id]
+      return next
+    })
+    let outcome: ReminderOutcome
+    try {
+      const result = await sendDueReminders(leagueId, o.id)
+      if (result.error) {
+        outcome = { tone: 'err', message: result.error }
+      } else if (result.sent > 0) {
+        outcome = { tone: 'ok', message: 'Reminder sent.' }
+      } else if (result.skipped > 0) {
+        outcome = { tone: 'warn', message: 'No email on file for this member.' }
+      } else if (result.failed > 0) {
+        outcome = { tone: 'err', message: 'Reminder failed — check server logs.' }
+      } else {
+        outcome = { tone: 'warn', message: 'Nothing outstanding to remind.' }
+      }
+    } catch {
+      outcome = {
+        tone: 'err',
+        message: 'Could not send the reminder. Try again.',
+      }
+    }
+    setReminderOutcome((prev) => ({ ...prev, [o.id]: outcome }))
+    setRemindingFor(null)
+  }
 
   const groups = useMemo(() => {
     const map = new Map<string, FinancesObligationView[]>()
@@ -160,6 +213,19 @@ export default function ObligationsList({
                               {o.payments.length === 1 ? '' : 's'}
                             </button>
                           )}
+                          {isCommissioner && remaining > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => sendReminder(o)}
+                              disabled={remindingFor === o.id}
+                              className="inline-flex items-center rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+                            >
+                              <Mail className="mr-1.5 h-3.5 w-3.5" />
+                              {remindingFor === o.id
+                                ? 'Sending…'
+                                : 'Send reminder'}
+                            </button>
+                          )}
                           {isCommissioner && (
                             <button
                               type="button"
@@ -177,6 +243,15 @@ export default function ObligationsList({
                         </div>
                       </div>
                     </div>
+
+                    {reminderOutcome[o.id] && (
+                      <p
+                        className={`mt-2 text-xs ${REMINDER_TONE_CLASS[reminderOutcome[o.id].tone]}`}
+                        role="status"
+                      >
+                        {reminderOutcome[o.id].message}
+                      </p>
+                    )}
 
                     {openPaymentFor === o.id && (
                       <RecordPaymentForm

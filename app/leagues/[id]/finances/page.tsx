@@ -114,6 +114,7 @@ export default async function LeagueFinancesPage({
       <ObligationsList
         obligations={overview.obligations}
         isCommissioner={ctx.isCommissioner}
+        leagueId={id}
       />
     </div>
   )

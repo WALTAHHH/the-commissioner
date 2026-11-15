@@ -33,6 +33,11 @@ import { authorize } from '@/src/lib/auth/authorize'
 import { recordActivity } from '@/src/lib/activity'
 import { loadLeagueContext } from '@/src/lib/dashboard'
 import { loadPrizes, type PrizeSections } from '@/src/lib/finances'
+import { sendEmail } from '@/src/lib/email'
+import { dudeReminderEmail } from '@/src/lib/email-templates'
+import { fetchIdentities } from '@/src/lib/dashboard'
+import { displayName } from '@/src/lib/display'
+import { selectRowsWithColumnFallback } from '@/src/lib/placeholder'
 import type { PrizeScope, PrizeType } from '@/src/db/schema/finances'
 import type {
   FinancialObligationRow,
@@ -1573,4 +1578,231 @@ export async function getPrizes(
   }
 
   return { sections: await loadPrizes(leagueId, seasonYear) }
+}
+
+// ---------------------------------------------------------------------------
+// Payment reminders (Notifications)
+// ---------------------------------------------------------------------------
+//
+// `sendDueReminders` emails unpaid members a dues reminder. It is the first
+// production caller of `src/lib/email.ts` — the transport is best-effort by
+// design: a reminder failing (or a member with no email) must never break the
+// commissioner's page, so every send is wrapped and failures are logged, not
+// thrown. The result counts what happened so the UI can say something honest.
+
+export interface SendDueRemindersResult {
+  /** Obligations a reminder email was accepted for. */
+  sent: number
+  /** Unpaid obligations skipped because the member has no email on file. */
+  skipped: number
+  /** Obligations whose send failed — logged here, never thrown to the caller. */
+  failed: number
+  error?: string
+}
+
+/** One obligation resolved down to everything the email template needs. */
+interface ReminderTarget {
+  obligationId: string
+  email: string | null
+  memberName: string
+  amount: number
+  dueDate: string | null
+  paymentInstructions: string | null
+}
+
+const NO_DUE_DATE = 'No set deadline'
+const NO_INSTRUCTIONS = 'Contact the commissioner for payment details.'
+
+/**
+ * Send dues-reminder emails for a league's unpaid obligations.
+ *
+ * Commissioner-only (an outbound email is a communication act, gated on the
+ * `leagues.commissioner_id` source of truth via `requireCommissioner` — the
+ * `authorize()` stub denies every action, so it cannot gate this).
+ *
+ * @param leagueId uuid of the league
+ * @param obligationId optional — when given, remind only that obligation
+ *   (its league is re-read from the row, never trusted from the caller);
+ *   otherwise remind every unpaid, non-deleted obligation in the league.
+ *
+ * Unpaid = the sum of the obligation's 'received' payments is less than the
+ * obligation amount (the same outstanding-balance rule the UI shows).
+ * Best-effort: individual send failures are logged and counted in `failed`,
+ * a member without a deliverable address is counted in `skipped`, and only
+ * argument/authorization problems come back as `error`.
+ */
+export async function sendDueReminders(
+  leagueId: string,
+  obligationId?: string,
+): Promise<SendDueRemindersResult> {
+  const EMPTY = { sent: 0, skipped: 0, failed: 0 }
+  const user = await requireUser()
+  if (!user) {
+    return { ...EMPTY, error: 'You must be signed in.' }
+  }
+  if (!isUuid(leagueId)) {
+    return { ...EMPTY, error: 'Invalid league ID.' }
+  }
+  if (obligationId !== undefined && !isUuid(obligationId)) {
+    return { ...EMPTY, error: 'Invalid obligation ID.' }
+  }
+
+  if (!(await requireCommissioner(user.id, leagueId))) {
+    return { ...EMPTY, error: 'You are not authorized to send reminders in this league.' }
+  }
+
+  // League name renders in every email; load it once.
+  const { data: leagueData, error: leagueError } = await db
+    .from('leagues')
+    .select('name')
+    .eq('id', leagueId)
+    .maybeSingle()
+  if (leagueError || !leagueData) {
+    return { ...EMPTY, error: 'League not found.' }
+  }
+  const leagueName = (leagueData as unknown as { name: string }).name
+
+  // --- Target obligations ----------------------------------------------------
+  let rows: FinancialObligationRow[]
+  if (obligationId !== undefined) {
+    const { data, error } = await db
+      .from('financial_obligations')
+      .select('*')
+      .eq('id', obligationId)
+      .is('deleted_at', null)
+      .maybeSingle()
+    if (error || !data) {
+      return { ...EMPTY, error: 'Obligation not found.' }
+    }
+    const row = data as unknown as FinancialObligationRow
+    if (row.league_id !== leagueId) {
+      return { ...EMPTY, error: 'Obligation not found in this league.' }
+    }
+    rows = [row]
+  } else {
+    const { data, error } = await db
+      .from('financial_obligations')
+      .select('*')
+      .eq('league_id', leagueId)
+      .is('deleted_at', null)
+    if (error) {
+      console.error('sendDueReminders obligations error:', error)
+      return { ...EMPTY, error: 'Failed to load obligations.' }
+    }
+    rows = (data ?? []) as unknown as FinancialObligationRow[]
+  }
+
+  // Outstanding balance decides who still owes — anything fully received is done.
+  const payments = await loadPayments(rows.map((o) => o.id))
+  if ('error' in payments) {
+    return { ...EMPTY, error: payments.error }
+  }
+  const outstandingCents = (o: FinancialObligationRow): number => {
+    const owed = Math.round(toNumber(o.amount) * 100)
+    const paid = (payments.map.get(o.id) ?? []).reduce(
+      (acc, p) =>
+        p.status === 'received'
+          ? acc + Math.round(toNumber(p.amount) * 100)
+          : acc,
+      0,
+    )
+    return owed - paid
+  }
+  const unpaid = rows.filter((o) => outstandingCents(o) > 0)
+
+  // --- Resolve recipients ----------------------------------------------------
+  // Claimed members: auth email (GoTrue admin) → placeholder_email (0010) →
+  // nothing (counted as skipped). The fallback query drops the placeholder
+  // columns when migration 0010 has not been applied.
+  const memberIds = Array.from(new Set(unpaid.map((o) => o.member_id)))
+  const memberById = new Map<string, LeagueMemberRow>()
+  if (memberIds.length > 0) {
+    const { rows: memberRows, error } =
+      await selectRowsWithColumnFallback<LeagueMemberRow>(
+        (columns) =>
+          db
+            .from('league_members')
+            .select(columns)
+            .eq('league_id', leagueId)
+            .in('id', memberIds),
+        'id, league_id, user_id, role, team_name, status, joined_at, is_placeholder, placeholder_name, placeholder_email',
+        'id, league_id, user_id, role, team_name, status, joined_at',
+      )
+    if (error) {
+      console.error('sendDueReminders members error:', error)
+    } else {
+      for (const row of memberRows) memberById.set(row.id, row)
+    }
+  }
+
+  const userIds = Array.from(
+    new Set(
+      Array.from(memberById.values())
+        .map((m) => m.user_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ),
+  )
+  const identities = await fetchIdentities(userIds)
+
+  const targets: ReminderTarget[] = unpaid.map((o) => {
+    const member = memberById.get(o.member_id)
+    const identity = member?.user_id ? identities.get(member.user_id) : undefined
+    const isPlaceholder =
+      !member || member.is_placeholder === true || member.user_id === null
+    const email = identity?.email ?? member?.placeholder_email ?? null
+    const memberName = displayName({
+      fullName: identity?.fullName ?? null,
+      name: identity?.name ?? null,
+      nickname: identity?.nickname ?? null,
+      email,
+      placeholderName: isPlaceholder ? member?.placeholder_name ?? null : null,
+    })
+    return {
+      obligationId: o.id,
+      email: email && email.trim() ? email.trim() : null,
+      memberName,
+      amount: outstandingCents(o) / 100,
+      dueDate: o.due_date,
+      paymentInstructions: o.payment_instructions,
+    }
+  })
+
+  // --- Send (best-effort) ----------------------------------------------------
+  let sent = 0
+  let skipped = 0
+  let failed = 0
+
+  for (const target of targets) {
+    if (!target.email) {
+      skipped += 1
+      console.error(
+        `sendDueReminders: no email for obligation ${target.obligationId} (member ${target.memberName})`,
+      )
+      continue
+    }
+    try {
+      await sendEmail({
+        to: target.email,
+        subject: `Dues reminder — ${leagueName}`,
+        html: dudeReminderEmail({
+          memberName: target.memberName,
+          leagueName,
+          amount: target.amount,
+          dueDate: target.dueDate ?? NO_DUE_DATE,
+          paymentInstructions: target.paymentInstructions ?? NO_INSTRUCTIONS,
+        }),
+      })
+      sent += 1
+    } catch (err) {
+      // Best-effort: a failed reminder must never break the commissioner's
+      // page. Log and move on to the next recipient.
+      failed += 1
+      console.error(
+        `sendDueReminders: send failed for obligation ${target.obligationId}:`,
+        err,
+      )
+    }
+  }
+
+  return { sent, skipped, failed }
 }
