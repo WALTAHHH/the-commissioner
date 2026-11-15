@@ -14,7 +14,18 @@ import {
 } from '@/src/lib/dashboard'
 import InviteMemberButton from './invite-member-button'
 import RoleBadge from '@/src/components/role-badge'
-import { Users, Trophy, Calendar, Zap, UserCog, Settings } from 'lucide-react'
+import {
+  Users,
+  Calendar,
+  Zap,
+  UserCog,
+  UserPlus,
+  Megaphone,
+  Scale,
+  BadgeCheck,
+  BookOpen,
+  Wallet,
+} from 'lucide-react'
 import SleeperSyncedCard from './components/integrations-section'
 import { getSleeperDisplayData } from '@/src/lib/integrations/sleeper/mapping'
 
@@ -64,6 +75,66 @@ export default async function LeaguePage({ params }: { params: Promise<{ id: str
   // Dashboard only shows league-level summary; member matching runs on the
   // members page with the full roster, so no match list here.
   const sleeper = await getSleeperDisplayData(id)
+
+  // The six commissioner quick actions (see t_1e1fa9a6). Each points at an
+  // existing route; "Record payment" and "View obligations" both open the
+  // finances obligations ledger because recording a payment happens on a
+  // specific obligation row there. Management intents are commissioner-only
+  // so members never hit a create page that just redirects them back.
+  type QuickAction = {
+    label: string
+    description: string
+    href: string
+    icon: React.ReactNode
+    commissionerOnly: boolean
+  }
+  const quickActions: QuickAction[] = [
+    {
+      label: 'Invite a member',
+      description: 'Share a link to join the league',
+      href: `/leagues/${id}/members`,
+      icon: <UserPlus className="h-5 w-5" />,
+      commissionerOnly: true,
+    },
+    {
+      label: 'New announcement',
+      description: 'Broadcast news to the league',
+      href: `/leagues/${id}/announcements/new`,
+      icon: <Megaphone className="h-5 w-5" />,
+      commissionerOnly: true,
+    },
+    {
+      label: 'New poll',
+      description: 'Put a question to a vote',
+      href: `/leagues/${id}/governance/polls/new`,
+      icon: <Scale className="h-5 w-5" />,
+      commissionerOnly: true,
+    },
+    {
+      label: 'Record payment',
+      description: "Log a member's dues payment",
+      href: `/leagues/${id}/finances`,
+      icon: <BadgeCheck className="h-5 w-5" />,
+      commissionerOnly: true,
+    },
+    {
+      label: 'Edit rules',
+      description: 'Update the league rulebook',
+      href: `/leagues/${id}/rules`,
+      icon: <BookOpen className="h-5 w-5" />,
+      commissionerOnly: true,
+    },
+    {
+      label: 'View obligations',
+      description: 'See who owes what',
+      href: `/leagues/${id}/finances`,
+      icon: <Wallet className="h-5 w-5" />,
+      commissionerOnly: false,
+    },
+  ]
+  const visibleActions = quickActions.filter(
+    (action) => isCommissioner || !action.commissionerOnly,
+  )
 
   return (
     <div className="space-y-8">
@@ -128,64 +199,59 @@ export default async function LeaguePage({ params }: { params: Promise<{ id: str
               <Zap className="h-6 w-6 text-accent dark:text-accent/80" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Quick actions</p>
-              <p className="mt-1 text-sm text-foreground">
-                Invite, manage, settings
+              <p className="text-sm text-muted-foreground">Your role</p>
+              <p className="mt-1 text-2xl font-bold text-foreground">
+                {isCommissioner ? 'Commissioner' : 'Member'}
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
-            <Link
-              href={`/leagues/${id}/members`}
-              className="flex-1 rounded-lg border border-input bg-transparent px-3 py-2 text-center text-sm font-medium text-foreground hover:border-ring/50"
-            >
-              Members
-            </Link>
-            <Link
-              href={`/leagues/${id}/settings`}
-              className="flex-1 rounded-lg border border-input bg-transparent px-3 py-2 text-center text-sm font-medium text-foreground hover:border-ring/50"
-            >
-              Settings
-            </Link>
-          </div>
+          <p className="text-xs text-muted-foreground">
+            {isCommissioner
+              ? 'You can invite, announce, poll, record payments, and edit the rulebook.'
+              : 'You can read the rulebook and announcements, and view your own obligations.'}
+          </p>
         </div>
       </div>
 
-      {/* Quick actions */}
+      {/* Quick actions — the six commissioner shortcuts. */}
       <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
         <h2 className="mb-6 flex items-center gap-2 text-xl font-semibold text-foreground">
           <Zap className="h-5 w-5" />
-          League management
+          Quick actions
         </h2>
-        <div className="space-y-6">
-          {isCommissioner && (
-            <div>
-              <h3 className="mb-2 text-lg font-medium text-foreground">
-                Invite a member
-              </h3>
-              <p className="mb-4 text-sm text-muted-foreground">
-                Create a shareable invite link (7‑day default, unlimited uses)
-              </p>
-              <InviteMemberButton leagueId={id} />
-            </div>
-          )}
-          <div className="flex flex-wrap gap-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {visibleActions.map((action) => (
             <Link
-              href={`/leagues/${id}/members`}
-              className="inline-flex items-center rounded-lg bg-primary px-5 py-3 text-base font-medium text-primary-foreground hover:bg-primary/90"
+              key={action.label}
+              href={action.href}
+              className="group flex items-start gap-3 rounded-xl border border-border bg-background p-4 transition-colors hover:border-ring/50 hover:bg-accent/40"
             >
-              <Users className="mr-2 h-5 w-5" />
-              View all members
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary dark:bg-primary/20">
+                {action.icon}
+              </span>
+              <span className="min-w-0">
+                <span className="block font-medium text-foreground group-hover:text-primary">
+                  {action.label}
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {action.description}
+                </span>
+              </span>
             </Link>
-            <Link
-              href={`/leagues/${id}/settings`}
-              className="inline-flex items-center rounded-lg border border-input bg-transparent px-5 py-3 text-base font-medium text-foreground hover:border-ring/50"
-            >
-              <Settings className="mr-2 h-5 w-5" />
-              League settings
-            </Link>
-          </div>
+          ))}
         </div>
+        {isCommissioner && (
+          <div className="mt-6 border-t border-border pt-6">
+            <h3 className="mb-2 text-lg font-medium text-foreground">
+              Create an invite link
+            </h3>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Generate a shareable link (7‑day default, unlimited uses). The
+              &ldquo;Invite a member&rdquo; shortcut above opens the roster.
+            </p>
+            <InviteMemberButton leagueId={id} />
+          </div>
+        )}
       </div>
 
       {/* Member preview */}
@@ -210,7 +276,12 @@ export default async function LeaguePage({ params }: { params: Promise<{ id: str
                       </div>
                       <div>
                         <p className="font-medium text-foreground">
-                          {displayName(member)}
+                          <Link
+                            href={`/leagues/${id}/members/${member.id}`}
+                            className="hover:text-primary hover:underline"
+                          >
+                            {displayName(member)}
+                          </Link>
                         </p>
                         <div className="mt-1 flex items-center gap-2">
                           <RoleBadge role={member.role} />
