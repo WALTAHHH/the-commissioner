@@ -18,6 +18,7 @@ import {
   Scale,
   History,
   Megaphone,
+  Search,
 } from 'lucide-react'
 import SignOutButton from './SignOutButton'
 import { getLeagueName } from '@/app/actions/league-nav'
@@ -88,6 +89,12 @@ export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavPro
       href: '/dashboard',
       icon: <Home className="h-5 w-5" />,
       active: pathname === '/dashboard' || pathname.startsWith('/dashboard/'),
+    },
+    {
+      label: 'Search',
+      href: leagueId ? `/leagues/${leagueId}/search` : null,
+      icon: <Search className="h-5 w-5" />,
+      active: inLeague('search'),
     },
     {
       label: 'Announcements',
