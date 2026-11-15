@@ -2,8 +2,10 @@ import { createClient } from '@/src/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { listUserLeagues } from '@/src/lib/dashboard'
+import { loadRecentAnnouncementsAcrossLeagues } from '@/src/lib/announcements'
 import { prettifyLabel, pluralizeCount } from '@/src/lib/display'
 import RedeemInviteForm from '@/src/components/redeem-invite-form'
+import RecentAnnouncementsWidget from '@/src/components/recent-announcements-widget'
 import { Sparkles, Plus, Users, Trophy } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
@@ -21,6 +23,13 @@ export default async function DashboardPage() {
   if (!user) redirect('/login')
 
   const leagues = await listUserLeagues(user.id)
+
+  // Cross-league "what just happened" feed. Reuses the same league list the
+  // grid renders (one access-rule evaluation, consistent visibility); with
+  // no leagues the read short-circuits to zero queries — the welcome empty
+  // state already owns that screen and the widget is not rendered there.
+  const recentAnnouncements =
+    leagues.length > 0 ? await loadRecentAnnouncementsAcrossLeagues(user.id, leagues) : []
 
   return (
     <div>
@@ -88,6 +97,13 @@ export default async function DashboardPage() {
         </div>
       ) : (
         <>
+          {/* Cross-league feed sits above the grid: it is the "anything new?"
+              glance; the league cards are navigation. The widget owns its
+              own empty state, so it renders even with no announcements. */}
+          <div className="mb-10">
+            <RecentAnnouncementsWidget announcements={recentAnnouncements} />
+          </div>
+
           {/* League cards */}
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {leagues.map((league) => (
