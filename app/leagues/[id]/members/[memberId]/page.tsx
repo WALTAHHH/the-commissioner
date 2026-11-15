@@ -2,29 +2,25 @@ import { createClient } from '@/src/utils/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { loadLeagueContext, listDirectoryMembers } from '@/src/lib/dashboard'
+import { loadMemberActivity } from '@/src/lib/member-activity'
 import { displayName, formatDate, prettifyLabel } from '@/src/lib/display'
 import { isUuid } from '@/src/lib/invitations'
 import { buildTeamMatching } from '@/src/lib/integrations/team-matching'
-import { loadMemberObligationsSection } from '@/src/lib/member-obligations'
-import { loadMemberVotesSection } from '@/src/lib/member-votes'
-import { loadMemberAwardsSection } from '@/src/lib/member-awards'
 import RoleBadge from '@/src/components/role-badge'
 import PendingBadge, { IntendedRoleSuffix } from '../pending-badge'
-import MemberObligationsSection from './obligations-section'
-import MemberVotesSection from './votes-section'
-import MemberAwardsSection from './awards-section'
+import MemberActivitySection from './activity-section'
 import { ArrowLeft, Plug, Users } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * Member profile — page shell + membership header + the Obligations section.
+ * Member profile — page shell + membership header (t_1e44c664).
  *
- * Header: display name, team name, league role badge, platform role (when the
- * league's integration snapshot makes one explicit), and joined date. The
- * remaining record sections (votes, awards, activity) are added by their own
- * cards below; this shell is deliberately just the identity block plus the
- * Obligations section (t_8965695e) so those land as independent sections.
+ * Header only: display name, team name, league role badge, platform role
+ * (when the league's integration snapshot makes one explicit), and joined
+ * date. The record sections (obligations, votes, awards, activity) are added
+ * by their own cards; this shell is deliberately just the identity block so
+ * those land as independent sections below it.
  *
  * Visibility: any active member of the league may open a profile
  * (permission model `membership | member | view`). Access is gated by
@@ -101,26 +97,9 @@ export default async function MemberProfilePage({
   const pending = member.isPlaceholder === true
   const isCommissioner = ctx.isCommissioner
 
-  // The three record sections load in parallel. Obligations and awards are
-  // ACL-resolved in their own modules: each loader decides whether this viewer
-  // may see the league's money at all (honouring `financial_visibility`), so
-  // the page never branches on it — the section renders its own restricted
-  // state when the viewer is not entitled. Votes carry no such gate.
-  const [obligations, votes, awards] = await Promise.all([
-    loadMemberObligationsSection({
-      leagueId: id,
-      memberId,
-      viewerUserId: user.id,
-      viewerIsCommissioner: isCommissioner,
-    }),
-    loadMemberVotesSection(id, memberId),
-    loadMemberAwardsSection({
-      leagueId: id,
-      memberId,
-      viewerUserId: user.id,
-      viewerIsCommissioner: isCommissioner,
-    }),
-  ])
+  // Activity section (t_ee39787e): newest slice of the league audit trail that
+  // touches this member. Degrades to an empty list on its own failure.
+  const activity = await loadMemberActivity(id, member.id)
 
   return (
     <div className="space-y-8">
@@ -194,18 +173,12 @@ export default async function MemberProfilePage({
         </div>
       </div>
 
-      {/* Obligations (finances) — read-only; writes live in the finances hub. */}
-      <MemberObligationsSection
+      {/* Activity */}
+      <MemberActivitySection
         leagueId={id}
         memberName={displayName(member)}
-        view={obligations}
+        events={activity}
       />
-
-      {/* Votes — every poll this member has voted in. */}
-      <MemberVotesSection leagueId={id} votes={votes} />
-
-      {/* Awards & honours — championships, awards and prize wins. */}
-      <MemberAwardsSection awards={awards.awards} showAmounts={awards.showAmounts} />
 
       {/* Back link */}
       <div className="border-t border-border pt-6">
