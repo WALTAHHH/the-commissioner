@@ -145,6 +145,72 @@ export function invitationExpiryFrom(
   return new Date(now.getTime() + seconds * 1000)
 }
 
+/**
+ * The PostgrestError shape a failed invite RPC / membership write arrives as
+ * (supabase-js passes the PostgREST error through verbatim). Only the fields
+ * we log or branch on are listed.
+ */
+export type DatabaseFailure = {
+  code?: string
+  message?: string
+  details?: string
+  hint?: string
+}
+
+/** Visitor-facing copy + machine-readable code for a failed redeem/write. */
+export type InvitationFailureCopy = {
+  /** What to show the user. Never empty. */
+  message: string
+  /** The Postgres/PostgREST code behind the message, when there was one. */
+  code?: string
+}
+
+/**
+ * Turn a database failure from the accept_invitation RPC (or the fallback
+ * membership write) into copy that names the actual cause instead of a
+ * catch-all "please try again".
+ *
+ * Pure — no DB, no next/headers — so the mapping is unit-testable. Codes are
+ * the ones the redeem flow can actually raise:
+ *
+ *  * 23503 foreign_key_violation — `league_members.user_id → auth.users`: the
+ *    signed-in session points at an auth user row that does not exist yet
+ *    (signup/confirm not finished, or the account was deleted). Nothing to do
+ *    with the invite, so the fix is to finish/redo sign-in.
+ *  * 23505 unique_violation — `league_members UNIQUE(league_id, user_id)`: a
+ *    membership row already exists (a concurrent join won the race).
+ *  * 42703 undefined_column / 42P01 undefined_table / PGRST204 — a migration
+ *    the join depends on has not been applied on this deployment.
+ *
+ * Anything else is genuinely unexpected and keeps the generic retry copy.
+ */
+export function describeInvitationFailure(
+  error: DatabaseFailure | null | undefined,
+): InvitationFailureCopy {
+  const code = error?.code
+
+  switch (code) {
+    case '23503':
+      return {
+        code,
+        message:
+          'Your account isn’t fully set up yet, so we couldn’t add you to the league. Please sign out and sign in again, then reopen this invite link.',
+      }
+    case '23505':
+      return { code, message: 'You’re already a member of this league.' }
+    case '42703':
+    case '42P01':
+    case 'PGRST204':
+      return {
+        code,
+        message:
+          'Joining isn’t available on this deployment yet. Please try again later or contact the commissioner.',
+      }
+    default:
+      return { code, message: 'Could not join the league. Please try again.' }
+  }
+}
+
 /** Normalise max_uses: undefined/null -> unlimited, otherwise a positive int. */
 export function normalizeMaxUses(value: unknown): number | null | 'invalid' {
   if (value === undefined || value === null) return null

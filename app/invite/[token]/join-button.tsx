@@ -22,10 +22,13 @@ export default function JoinLeagueButton({
 }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  /** Postgres/PostgREST code behind `error`, shown as a support handle. */
+  const [errorCode, setErrorCode] = useState('')
   const [joined, setJoined] = useState<JoinedState | null>(null)
 
   const handleJoin = async () => {
     setError('')
+    setErrorCode('')
     setLoading(true)
 
     const result = await redeemInvitation(token)
@@ -33,6 +36,7 @@ export default function JoinLeagueButton({
 
     if (result.error || !result.ok || !result.leagueId) {
       setError(result.error ?? 'Could not join the league. Please try again.')
+      setErrorCode(result.code ?? '')
       return
     }
 
@@ -93,6 +97,11 @@ export default function JoinLeagueButton({
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
           <p className="font-medium text-destructive">Could not join</p>
           <p className="mt-1 text-sm text-destructive/90">{error}</p>
+          {errorCode && (
+            <p className="mt-2 font-mono text-xs text-destructive/70">
+              Error code: {errorCode}
+            </p>
+          )}
         </div>
       )}
     </div>

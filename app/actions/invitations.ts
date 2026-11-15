@@ -6,6 +6,7 @@ import { createClient } from '@/src/utils/supabase/server'
 import { randomUUID } from 'node:crypto'
 import {
   INVITATION_STATE_MESSAGE,
+  describeInvitationFailure,
   invitationExpiryFrom,
   invitationPath,
   invitationShareUrl,
@@ -13,6 +14,8 @@ import {
   normalizeMaxUses,
   normalizeToken,
   resolveInvitationState,
+  type DatabaseFailure,
+  type InvitationFailureCopy,
 } from '@/src/lib/invitations'
 import {
   loadInvitationById,
@@ -89,6 +92,12 @@ export interface RedeemInvitationResult {
    */
   note?: string
   error?: string
+  /**
+   * Machine-readable failure code behind `error` — the Postgres/PostgREST code
+   * (e.g. '23503') or an app-level tag. Shown to the user as a support handle
+   * and logged server-side. Absent on success and on errors with no code.
+   */
+  code?: string
 }
 
 async function requireUser() {
@@ -302,6 +311,53 @@ function joinerName(user: NonNullable<Awaited<ReturnType<typeof requireUser>>>):
 }
 
 /**
+ * Server-side log line for a failed redeem write. Records the full
+ * PostgrestError (code/details/hint) plus the acting user so the cause is
+ * recoverable from logs. The invite token is deliberately never logged — it is
+ * a bearer credential, and the same linkage is available from the invitation
+ * id in the audit trail.
+ */
+function logRedeemFailure(where: string, error: unknown, userId?: string): void {
+  const detail =
+    error && typeof error === 'object'
+      ? (error as DatabaseFailure)
+      : ({ message: String(error) } as DatabaseFailure)
+  console.error(`redeemInvitation: ${where}`, {
+    code: detail.code ?? null,
+    message: detail.message ?? null,
+    details: detail.details ?? null,
+    hint: detail.hint ?? null,
+    userId: userId ?? null,
+  })
+}
+
+/**
+ * The accept_invitation RPC collapses every dead-link case (unknown token,
+ * revoked, expired, used up) into status='invalid'. Re-read the link to say
+ * which one it was — a best-effort read, so a lookup failure falls back to the
+ * generic message rather than masking the outcome.
+ */
+async function describeDeadInvitation(
+  token: string,
+): Promise<InvitationFailureCopy> {
+  try {
+    const lookup = await loadInvitationByToken(token)
+    if (!lookup) return { message: 'This invite link isn’t valid.' }
+    const state = resolveInvitationState(lookup.invitation)
+    if (state === 'active') {
+      // The link reads as live, yet the RPC rejected it — a race (the last use
+      // was burned, or it was revoked, between the two reads). The generic
+      // message is the honest one; there is no single cause to name.
+      return { message: 'This invite link isn’t valid.' }
+    }
+    return { message: INVITATION_STATE_MESSAGE[state] }
+  } catch (err) {
+    console.error('describeDeadInvitation lookup failed', err)
+    return { message: 'This invite link isn’t valid.' }
+  }
+}
+
+/**
  * After a redemption that never exposed the invitation row to us (the
  * accept_invitation RPC path), settle the placeholder slot linked to the
  * token, if any. Best-effort by construction: the join already succeeded,
@@ -492,7 +548,8 @@ export async function redeemInvitation(
         const leagueId = row.league_id
         const leagueName = row.league_name
         if (status === 'invalid') {
-          return { error: 'This invite link isn’t valid.' }
+          const dead = await describeDeadInvitation(normalized)
+          return { error: dead.message, code: dead.code }
         }
         if (status === 'already_member') {
           // A slot linked to this invite still settles (merge into the
@@ -511,14 +568,23 @@ export async function redeemInvitation(
         const note = await settleSlotForRedeemedToken(normalized, leagueId, user)
         return { ok: true, leagueId, leagueName, note }
       }
-      return { error: 'This invite link isn’t valid.' }
+      // No error, but no row either: unexpected (the RPC always returns one
+      // row when it does not error). Log it and treat the link as dead.
+      console.error('redeemInvitation: accept_invitation returned no row')
+      const dead = await describeDeadInvitation(normalized)
+      return { error: dead.message, code: dead.code }
     }
 
     // 42883 = undefined_function: the migration hasn't run yet. Keep the old
     // PostgREST CAS path alive until it has; anything else is a real failure.
     if (rpc.error.code !== '42883') {
-      console.error('accept_invitation RPC failed', rpc.error)
-      return { error: 'Could not join the league. Please try again.' }
+      // Surface the real reason instead of a catch-all. A 23503 here means the
+      // signed-in account's auth row is missing (signup/confirm unfinished), a
+      // 23505 means a membership row already exists — see
+      // describeInvitationFailure. The full PostgrestError is logged.
+      logRedeemFailure('accept_invitation RPC failed', rpc.error, user.id)
+      const failure = describeInvitationFailure(rpc.error)
+      return { error: failure.message, code: failure.code }
     }
 
     // Fallback: CAS path — one statement per HTTPS request, retried on a lost race.
@@ -620,8 +686,13 @@ export async function redeemInvitation(
       note,
     }
   } catch (err) {
-    console.error('redeemInvitation failed', err)
-    return { error: 'Could not join the league. Please try again.' }
+    // The fallback membership write path throws PostgrestErrors directly (see
+    // joinLeague / burnInvitationUse) — map them the same way, so a 23503
+    // raised there also reads as "account not fully set up" instead of a
+    // generic retry.
+    logRedeemFailure('redeem failed', err, user.id)
+    const failure = describeInvitationFailure(err as DatabaseFailure)
+    return { error: failure.message, code: failure.code }
   }
 }
 
