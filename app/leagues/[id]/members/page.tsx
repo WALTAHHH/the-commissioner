@@ -248,7 +248,12 @@ export default async function LeagueMembersPage({
                     </div>
                     <div>
                       <p className="text-lg font-medium text-foreground">
-                        {displayName(m)}
+                        <Link
+                          href={`/leagues/${id}/members/${m.id}`}
+                          className="hover:text-primary hover:underline"
+                        >
+                          {displayName(m)}
+                        </Link>
                       </p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         {pending ? (
