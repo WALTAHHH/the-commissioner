@@ -362,6 +362,195 @@ export async function updateLeagueFinancials(
 }
 
 // ----------------------------------------------------------------------------
+// League identity + season settings
+// ----------------------------------------------------------------------------
+
+export interface UpdateLeagueResult {
+  error?: string
+  /** Set on a successful write; the settings form renders it as inline confirmation. */
+  saved?: boolean
+}
+
+/**
+ * Update the editable settings of a league: its identity fields (name, sport,
+ * format) and the year of its current season.
+ *
+ * Only the fields a commissioner may change from the settings page are
+ * writable here — `slug` is deliberately left alone (it is the league's public
+ * URL and other rows/links reference it) and commissioner hand-off is out of
+ * scope. Callers pass only the fields they own; any field left undefined is
+ * untouched.
+ *
+ * Validation mirrors createLeague: name 2-80 chars after trimming, sport and
+ * format must be members of SPORT_OPTIONS / FORMAT_OPTIONS, and the season year
+ * must satisfy isValidSeasonYear. Commissioner-only, enforced server-side.
+ *
+ * @param leagueId  uuid of the league
+ * @param fields    any subset of { name, sport, format, currentSeasonYear }
+ */
+export async function updateLeague(
+  leagueId: string,
+  {
+    name,
+    sport,
+    format,
+    currentSeasonYear,
+  }: {
+    name?: string
+    sport?: string
+    format?: string
+    currentSeasonYear?: number
+  },
+): Promise<UpdateLeagueResult> {
+  const user = await requireUser()
+  if (!user) {
+    return { error: 'You must be signed in.' }
+  }
+  if (!isUuid(leagueId)) {
+    return { error: 'Invalid league ID.' }
+  }
+
+  const isCommissioner = await requireCommissioner(user.id, leagueId)
+  if (!isCommissioner) {
+    return { error: 'Only the commissioner can update league settings.' }
+  }
+
+  // ---- validate every supplied field before writing anything ----
+  const updates: Record<string, unknown> = {}
+
+  if (name !== undefined) {
+    const trimmed = name.trim()
+    if (trimmed.length < 2 || trimmed.length > 80) {
+      return { error: 'League name must be between 2 and 80 characters.' }
+    }
+    updates.name = trimmed
+  }
+
+  if (sport !== undefined) {
+    if (!isValidSport(sport)) {
+      return { error: 'Choose a valid sport.' }
+    }
+    updates.sport = sport
+  }
+
+  if (format !== undefined) {
+    if (!isValidFormat(format)) {
+      return { error: 'Choose a valid format.' }
+    }
+    updates.format = format
+  }
+
+  if (currentSeasonYear !== undefined && !isValidSeasonYear(currentSeasonYear)) {
+    return {
+      error: `Season year must be an integer between ${SEASON_YEAR_MIN} and ${SEASON_YEAR_MAX}.`,
+    }
+  }
+
+  const hasLeagueUpdates = Object.keys(updates).length > 0
+  const hasSeasonUpdate = currentSeasonYear !== undefined
+
+  // Nothing to write — treat as a no-op success so the form can confirm.
+  if (!hasLeagueUpdates && !hasSeasonUpdate) {
+    return { saved: true }
+  }
+
+  // ---- leagues table: name / sport / format ----
+  if (hasLeagueUpdates) {
+    updates.updated_at = new Date().toISOString()
+
+    const { error } = await db
+      .from('leagues')
+      .update(updates)
+      .eq('id', leagueId)
+
+    if (error) {
+      console.error('updateLeague failed:', error)
+      return { error: 'Failed to update league settings.' }
+    }
+  }
+
+  // ---- league_seasons: retarget the year of the current season ----
+  if (hasSeasonUpdate) {
+    const { data: currentSeason, error: seasonReadError } = await db
+      .from('league_seasons')
+      .select('id, season_year')
+      .eq('league_id', leagueId)
+      .eq('is_current', true)
+      .maybeSingle()
+
+    if (seasonReadError) {
+      console.error('updateLeague season read failed:', seasonReadError)
+      return { error: 'Failed to update the season year.' }
+    }
+
+    if (currentSeason) {
+      // A different row must not already own the target year
+      // ((league_id, season_year) is unique). Checking first turns the
+      // constraint violation into a friendly message.
+      const { data: clash, error: clashError } = await db
+        .from('league_seasons')
+        .select('id')
+        .eq('league_id', leagueId)
+        .eq('season_year', currentSeasonYear)
+        .neq('id', (currentSeason as { id: string }).id)
+
+      if (clashError) {
+        console.error('updateLeague season clash check failed:', clashError)
+        return { error: 'Failed to update the season year.' }
+      }
+      if (clash && clash.length > 0) {
+        return { error: `Season ${currentSeasonYear} already exists for this league.` }
+      }
+
+      const { error: seasonUpdateError } = await db
+        .from('league_seasons')
+        .update({ season_year: currentSeasonYear })
+        .eq('id', (currentSeason as { id: string }).id)
+        .eq('league_id', leagueId) // belt-and-braces: never touch a foreign row
+
+      if (seasonUpdateError) {
+        console.error('updateLeague season update failed:', seasonUpdateError)
+        return { error: 'Failed to update the season year.' }
+      }
+    } else {
+      // Leagues created before season seeding may have no current row; create
+      // one so the edited year becomes the league's current season.
+      const { error: seasonInsertError } = await db
+        .from('league_seasons')
+        .insert({ league_id: leagueId, season_year: currentSeasonYear, is_current: true })
+
+      if (seasonInsertError) {
+        if (isUniqueViolation(seasonInsertError)) {
+          return { error: `Season ${currentSeasonYear} already exists for this league.` }
+        }
+        console.error('updateLeague season insert failed:', seasonInsertError)
+        return { error: 'Failed to update the season year.' }
+      }
+    }
+  }
+
+  // Audit trail — best-effort by design (see src/lib/activity.ts); a failed
+  // event write must never fail an otherwise committed settings update.
+  await recordActivity(
+    leagueId,
+    user.id,
+    'league_settings_changed',
+    hasSeasonUpdate
+      ? `League settings updated (season year → ${currentSeasonYear})`
+      : 'League settings updated',
+    { ...updates, ...(hasSeasonUpdate ? { currentSeasonYear } : {}) },
+  )
+
+  // Keep the server-rendered copies of these values (page header, settings
+  // cards) in step with the write the commissioner just made.
+  const { revalidatePath } = await import('next/cache')
+  revalidatePath(`/leagues/${leagueId}`, 'layout')
+  revalidatePath(`/leagues/${leagueId}/settings`)
+
+  return { saved: true }
+}
+
+// ----------------------------------------------------------------------------
 // Season rollover
 // ----------------------------------------------------------------------------
 
