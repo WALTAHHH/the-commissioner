@@ -2,11 +2,13 @@ import { createClient } from '@/src/utils/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { loadLeagueContext, listDirectoryMembers } from '@/src/lib/dashboard'
+import { loadMemberActivity } from '@/src/lib/member-activity'
 import { displayName, formatDate, prettifyLabel } from '@/src/lib/display'
 import { isUuid } from '@/src/lib/invitations'
 import { buildTeamMatching } from '@/src/lib/integrations/team-matching'
 import RoleBadge from '@/src/components/role-badge'
 import PendingBadge, { IntendedRoleSuffix } from '../pending-badge'
+import MemberActivitySection from './activity-section'
 import { ArrowLeft, Plug, Users } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
@@ -95,6 +97,10 @@ export default async function MemberProfilePage({
   const pending = member.isPlaceholder === true
   const isCommissioner = ctx.isCommissioner
 
+  // Activity section (t_ee39787e): newest slice of the league audit trail that
+  // touches this member. Degrades to an empty list on its own failure.
+  const activity = await loadMemberActivity(id, member.id)
+
   return (
     <div className="space-y-8">
       {/* Back to directory */}
@@ -166,6 +172,13 @@ export default async function MemberProfilePage({
           </div>
         </div>
       </div>
+
+      {/* Activity */}
+      <MemberActivitySection
+        leagueId={id}
+        memberName={displayName(member)}
+        events={activity}
+      />
 
       {/* Back link */}
       <div className="border-t border-border pt-6">
