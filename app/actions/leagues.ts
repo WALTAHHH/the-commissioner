@@ -203,6 +203,87 @@ async function requireCommissioner(userId: string, leagueId: string): Promise<bo
   return (data as unknown as { commissioner_id: string }).commissioner_id === userId
 }
 
+export interface UpdateLeagueResult {
+  error?: string
+  /** Set on a successful write; the settings form renders it as inline confirmation. */
+  saved?: boolean
+}
+
+/**
+ * Rename a league and/or change its sport.
+ *
+ * Only the two identity fields the settings page exposes are writable here —
+ * `slug` is deliberately left alone (it is the league's public URL and other
+ * rows/links reference it), and `format`/commissioner hand-off are out of
+ * scope for this form.
+ *
+ * Validation mirrors createLeague: name 2-80 chars after trimming, sport must
+ * be one of SPORT_OPTIONS. Commissioner-only, enforced server-side.
+ */
+export async function updateLeague(
+  leagueId: string,
+  { name, sport }: { name?: string; sport?: string },
+): Promise<UpdateLeagueResult> {
+  const user = await requireUser()
+  if (!user) {
+    return { error: 'You must be signed in.' }
+  }
+  if (!isUuid(leagueId)) {
+    return { error: 'Invalid league ID.' }
+  }
+
+  const isCommissioner = await requireCommissioner(user.id, leagueId)
+  if (!isCommissioner) {
+    return { error: 'Only the commissioner can update league settings.' }
+  }
+
+  const updates: Record<string, unknown> = {}
+
+  if (name !== undefined) {
+    const trimmed = name.trim()
+    if (trimmed.length < 2 || trimmed.length > 80) {
+      return { error: 'League name must be between 2 and 80 characters.' }
+    }
+    updates.name = trimmed
+  }
+
+  if (sport !== undefined) {
+    if (!isValidSport(sport)) {
+      return { error: 'Choose a valid sport.' }
+    }
+    updates.sport = sport
+  }
+
+  // Nothing to write — treat as a no-op success so the form can confirm.
+  if (Object.keys(updates).length === 0) {
+    return { saved: true }
+  }
+
+  updates.updated_at = new Date().toISOString()
+
+  const { error } = await db.from('leagues').update(updates).eq('id', leagueId)
+
+  if (error) {
+    console.error('updateLeague failed:', error)
+    return { error: 'Failed to update league settings.' }
+  }
+
+  await recordActivity(
+    leagueId,
+    user.id,
+    'league_settings_changed',
+    'League name/sport updated',
+    updates,
+  )
+
+  // Keep server-rendered copies of the name (page header, nav, settings
+  // summary) in step with the write the commissioner just made.
+  const { revalidatePath } = await import('next/cache')
+  revalidatePath(`/leagues/${leagueId}`, 'layout')
+
+  return { saved: true }
+}
+
 export interface UpdateLeagueFinancialsResult {
   error?: string
 }

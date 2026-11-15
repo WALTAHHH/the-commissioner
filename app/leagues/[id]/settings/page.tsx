@@ -3,10 +3,11 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { loadLeagueContext, resolveSeason } from '@/src/lib/dashboard'
 import { prettifyLabel, formatDate } from '@/src/lib/display'
-import { Settings, Trophy, Users, Hash, Calendar, Mail, Globe } from 'lucide-react'
+import { Settings, Users, Hash, Calendar, Mail } from 'lucide-react'
 import { db } from '@/src/lib/db'
 import { updateLeagueFinancials } from '@/app/actions/leagues'
 import type { LeagueRow } from '@/src/db/rows'
+import LeagueDetailsForm from './league-details-form'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,17 +44,10 @@ export default async function LeagueSettingsPage({ params }: { params: Promise<{
 
   const season = await resolveSeason(id)
 
+  // League name and sport are omitted here: they are editable in the
+  // LeagueDetailsForm card below, and duplicating them as static cards would
+  // leave stale values on screen after a save.
   const fields = [
-    {
-      icon: <Globe className="h-5 w-5" />,
-      label: 'League name',
-      value: ctx.name,
-    },
-    {
-      icon: <Trophy className="h-5 w-5" />,
-      label: 'Sport',
-      value: prettifyLabel(ctx.sport),
-    },
     {
       icon: <Users className="h-5 w-5" />,
       label: 'Format',
@@ -92,9 +86,25 @@ export default async function LeagueSettingsPage({ params }: { params: Promise<{
         <div className="flex items-center gap-2 rounded-full bg-muted px-4 py-2">
           <Settings className="h-5 w-5 text-muted-foreground" />
           <span className="text-sm font-medium text-foreground">
-            Read‑only for now
+            {ctx.isCommissioner ? 'Commissioner editable' : 'Read‑only'}
           </span>
         </div>
+      </div>
+
+      {/* League details (name + sport) */}
+      <div className="rounded-2xl border border-border bg-card p-8">
+        <h3 className="mb-1 text-xl font-semibold text-foreground">
+          League details
+        </h3>
+        <p className="mb-6 text-sm text-muted-foreground">
+          The league name and sport. Changes take effect immediately.
+        </p>
+        <LeagueDetailsForm
+          leagueId={id}
+          name={ctx.name}
+          sport={ctx.sport}
+          canEdit={ctx.isCommissioner}
+        />
       </div>
 
       {/* Info cards */}
@@ -238,11 +248,12 @@ export default async function LeagueSettingsPage({ params }: { params: Promise<{
           </div>
           <div>
             <h3 className="text-lg font-semibold text-primary dark:text-primary/90">
-              Settings are read‑only in this phase
+              Some settings are still read‑only
             </h3>
             <p className="mt-2 text-primary/80 dark:text-primary/70">
-              These fields cannot be edited yet. League renaming, sport/format
-              changes, and commissioner hand‑off will arrive in a future release.
+              League name and sport can be edited above. Format changes,
+              commissioner hand‑off and logo upload will arrive in a future
+              release.
             </p>
           </div>
         </div>
@@ -256,7 +267,7 @@ export default async function LeagueSettingsPage({ params }: { params: Promise<{
         <ul className="space-y-3 text-sm text-muted-foreground">
           <li className="flex items-center gap-2">
             <div className="h-2 w-2 shrink-0 rounded-full bg-muted-foreground/50"></div>
-            <span>League renaming and logo upload</span>
+            <span>League logo upload</span>
           </li>
           <li className="flex items-center gap-2">
             <div className="h-2 w-2 shrink-0 rounded-full bg-muted-foreground/50"></div>
