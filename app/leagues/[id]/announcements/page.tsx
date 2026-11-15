@@ -6,6 +6,7 @@ import { loadAnnouncements } from '@/src/lib/announcements'
 import { isUuid } from '@/src/lib/invitations'
 import { pluralizeCount } from '@/src/lib/display'
 import AnnouncementCard, { PinnedSectionLabel } from './announcement-card'
+import LeagueBadge from '@/src/components/league-badge'
 import { Megaphone, Plus, Inbox } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
@@ -73,15 +74,17 @@ export default async function LeagueAnnouncementsPage({
       <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            {ctx.name} Announcements
+            Announcements
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {ctx.name}
+          {/* The league is the page's context, so it renders as a badge rather
+              than as plain text repeated from the h1. */}
+          <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            <LeagueBadge name={ctx.name} href={`/leagues/${id}`} />
             {announcements.length > 0 && (
-              <> · {pluralizeCount(announcements.length, 'announcement')}</>
+              <span>{pluralizeCount(announcements.length, 'announcement')}</span>
             )}
             {unreadCount > 0 && (
-              <span className="ml-2 rounded-md bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+              <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
                 {unreadCount} unread
               </span>
             )}

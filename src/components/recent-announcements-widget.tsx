@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { Megaphone, Pin, Inbox } from 'lucide-react'
 import type { AnnouncementCrossLeagueView } from '@/src/lib/announcements'
 import { formatRelativeTime } from '@/src/lib/display'
+import LeagueBadge from '@/src/components/league-badge'
 
 /**
  * "Recent announcements" widget on /dashboard.
@@ -16,6 +17,10 @@ import { formatRelativeTime } from '@/src/lib/display'
  * Body text is rendered as a plain one-line snippet, not markdown: a widget
  * row is a preview, and MarkdownBody (react-markdown) would pull the whole
  * renderer into the dashboard for content we truncate to one line anyway.
+ *
+ * Each row leads with a LeagueBadge naming the league the announcement came
+ * from — with several leagues feeding one feed, that origin is the single
+ * most important thing a row has to communicate.
  */
 
 /** Characters of body text kept for the snippet preview. */
@@ -90,9 +95,9 @@ export default function RecentAnnouncementsWidget({
                 className="group block rounded-lg focus-visible:outline-2 focus-visible:outline-ring"
               >
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground group-hover:text-primary">
-                    {announcement.leagueName}
-                  </span>
+                  {/* Which league this came from — the widget is cross-league,
+                      so this is the one thing every row must make obvious. */}
+                  <LeagueBadge name={announcement.leagueName} />
                   {!announcement.isRead && (
                     <span
                       data-testid="unread-indicator"
