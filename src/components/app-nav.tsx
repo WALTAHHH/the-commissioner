@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import {
   Home,
   Users,
@@ -11,7 +11,7 @@ import {
   Menu,
   X,
   ChevronDown,
-  LogOut,
+  Check,
   Plug,
   Activity,
   Wallet,
@@ -21,10 +21,20 @@ import {
   Search,
 } from 'lucide-react'
 import SignOutButton from './SignOutButton'
-import { getLeagueName } from '@/app/actions/league-nav'
 import { cn } from 'cn'
 
-const LEAGUE_PATH = /^\/leagues\/([^/?#]+)/
+/** `/leagues/<id>/<rest>` — group 2 keeps the section (and any deeper path). */
+const LEAGUE_PATH = /^\/leagues\/([^/?#]+)(.*)$/
+
+/**
+ * Keys the user's last-chosen league in localStorage so the choice survives
+ * navigations and reloads. Read at runtime, never at module scope: the nav is
+ * server-rendered first, and a module-level read would break that.
+ */
+export const PREFERRED_LEAGUE_STORAGE_KEY = 'the-commissioner:preferred-league-id'
+
+/** Placeholder label for a viewer who is in no league at all. */
+const NO_LEAGUE_LABEL = 'Select League'
 
 type NavItem = {
   label: string
@@ -33,45 +43,132 @@ type NavItem = {
   active: boolean
 }
 
+/** One league as the switcher needs it — the server component supplies these. */
+export type NavLeague = {
+  id: string
+  name: string
+}
+
+export type LeagueSwitcherState = {
+  /** The league the nav treats as current (URL first, then the preference, then the primary league). */
+  activeLeagueId: string | null
+  /** Display name of that league, or null when it is not in the viewer's list. */
+  activeLeagueName: string | null
+  /** True only when there is more than one league to switch between. */
+  canSwitch: boolean
+}
+
+/**
+ * Everything the sidebar switcher renders from, as one pure function.
+ *
+ *  - `activeLeagueId` is the league in the URL, else the viewer's stored
+ *    preference (when it is still one of their leagues), else their primary
+ *    (newest) league — the same league every section link points at from a
+ *    non-league page such as /dashboard. `/leagues/new` is a creation form,
+ *    not a league, so it falls through to the preference.
+ *  - `activeLeagueName` is looked up in the server-supplied list, never a
+ *    truncated id, so the switcher names the league rather than a uuid.
+ *  - `canSwitch` is true only with two or more leagues, so a single-league
+ *    user gets a plain label with no dropdown affordance.
+ */
+export function resolveLeagueSwitcher(
+  pathname: string,
+  leagues: NavLeague[],
+  preferredLeagueId: string | null = null,
+): LeagueSwitcherState {
+  const pathLeagueId = pathname.match(LEAGUE_PATH)?.[1]
+  const urlLeagueId = pathLeagueId && pathLeagueId !== 'new' ? pathLeagueId : null
+  const knownIds = new Set(leagues.map((league) => league.id))
+
+  const activeLeagueId =
+    urlLeagueId ??
+    (preferredLeagueId && knownIds.has(preferredLeagueId) ? preferredLeagueId : null) ??
+    leagues[0]?.id ??
+    null
+
+  return {
+    activeLeagueId,
+    activeLeagueName: leagues.find((league) => league.id === activeLeagueId)?.name ?? null,
+    canSwitch: leagues.length > 1,
+  }
+}
+
+/**
+ * The `href` a section link should point at for `leagueId`, and the `href` that
+ * keeps the viewer in the same section when they switch leagues.
+ *
+ * `sectionPath` is the path below `/leagues/<id>` (possibly empty, or several
+ * segments deep such as `/finances/ledger`).
+ */
+export function leagueSectionHref(
+  leagueId: string | null,
+  sectionPath: string,
+): string | null {
+  if (!leagueId) return null
+  const suffix = sectionPath.startsWith('/') ? sectionPath : `/${sectionPath}`
+  return sectionPath ? `/leagues/${leagueId}${suffix}` : `/leagues/${leagueId}`
+}
+
 type AppNavProps = {
-  fallbackLeagueId?: string | null
+  /** The viewer's leagues, newest first — see resolveLeagueSwitcher. */
+  leagues: NavLeague[]
   userEmail: string
 }
 
-export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavProps) {
+export default function AppNav({ leagues, userEmail }: AppNavProps) {
   const pathname = usePathname()
+  const router = useRouter()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [preferredLeagueId, setPreferredLeagueId] = useState<string | null>(null)
 
-  // Derived during render, not in an effect: a client-side navigation into (or
-  // between) league pages then highlights the right section on the first frame
-  // instead of one render after.
-  const pathLeagueId = pathname.match(LEAGUE_PATH)?.[1]
-  const leagueId =
-    pathLeagueId && pathLeagueId !== 'new' ? pathLeagueId : fallbackLeagueId
-
-  // The switcher shows the league's real name, never a truncated id. The name
-  // is fetched for the current leagueId (loadLeagueContext under the hood, so
-  // it is null for a league the viewer cannot see).
-  const [leagueName, setLeagueName] = useState<string | null>(null)
-
+  // localStorage is client-only, so the preference is adopted after mount.
+  // Until then the switcher falls back to the primary league — the same league
+  // the nav pointed at before preferences existed — so there is nothing to
+  // flash and no hydration mismatch.
   useEffect(() => {
-    if (!leagueId) {
-      setLeagueName(null)
-      return
+    try {
+      const stored = window.localStorage.getItem(PREFERRED_LEAGUE_STORAGE_KEY)
+      if (stored) setPreferredLeagueId(stored)
+    } catch {
+      // Private mode / storage disabled: the in-memory preference still works.
     }
-    let cancelled = false
-    setLeagueName(null)
-    getLeagueName(leagueId)
-      .then((name) => {
-        if (!cancelled) setLeagueName(name)
-      })
-      .catch(() => {
-        if (!cancelled) setLeagueName(null)
-      })
-    return () => {
-      cancelled = true
+  }, [])
+
+  const leagueMatch = pathname.match(LEAGUE_PATH)
+  const pathLeagueId = leagueMatch?.[1] === 'new' ? null : (leagueMatch?.[1] ?? null)
+  const sectionPath = pathLeagueId ? (leagueMatch?.[2] ?? '') : ''
+
+  // Following a link into another league (an invite, a notification email) is
+  // also a choice of league: remember it, so returning to /dashboard lands on
+  // the league the viewer was last actually in.
+  useEffect(() => {
+    if (!pathLeagueId || pathLeagueId === preferredLeagueId) return
+    if (!leagues.some((league) => league.id === pathLeagueId)) return
+    setPreferredLeagueId(pathLeagueId)
+    try {
+      window.localStorage.setItem(PREFERRED_LEAGUE_STORAGE_KEY, pathLeagueId)
+    } catch {
+      // See above — the in-memory value is enough for this session.
     }
-  }, [leagueId])
+  }, [pathLeagueId, preferredLeagueId, leagues])
+
+  const { activeLeagueId: leagueId, activeLeagueName, canSwitch } =
+    resolveLeagueSwitcher(pathname, leagues, preferredLeagueId)
+
+  /** Switch context: remember the choice, then keep the current section if there is one. */
+  const selectLeague = (nextLeagueId: string) => {
+    setPreferredLeagueId(nextLeagueId)
+    try {
+      window.localStorage.setItem(PREFERRED_LEAGUE_STORAGE_KEY, nextLeagueId)
+    } catch {
+      // Non-fatal: the selection still applies for this session.
+    }
+    setIsMobileMenuOpen(false)
+
+    if (pathLeagueId && nextLeagueId !== pathLeagueId) {
+      router.push(leagueSectionHref(nextLeagueId, sectionPath) as string)
+    }
+  }
 
   // Active section for any route under it: /finances, /finances/ledger,
   // /governance/polls/new all light up their top-level entry. The trailing
@@ -92,68 +189,75 @@ export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavPro
     },
     {
       label: 'Search',
-      href: leagueId ? `/leagues/${leagueId}/search` : null,
+      href: leagueSectionHref(leagueId, 'search'),
       icon: <Search className="h-5 w-5" />,
       active: inLeague('search'),
     },
     {
       label: 'Announcements',
-      href: leagueId ? `/leagues/${leagueId}/announcements` : null,
+      href: leagueSectionHref(leagueId, 'announcements'),
       icon: <Megaphone className="h-5 w-5" />,
       active: inLeague('announcements'),
     },
     {
       label: 'Rules',
-      href: leagueId ? `/leagues/${leagueId}/rules` : null,
+      href: leagueSectionHref(leagueId, 'rules'),
       icon: <BookOpen className="h-5 w-5" />,
       active: inLeague('rules'),
     },
     {
       label: 'Finances',
-      href: leagueId ? `/leagues/${leagueId}/finances` : null,
+      href: leagueSectionHref(leagueId, 'finances'),
       icon: <Wallet className="h-5 w-5" />,
       active: inLeague('finances'),
     },
     {
       label: 'Activity',
-      href: leagueId ? `/leagues/${leagueId}/activity` : null,
+      href: leagueSectionHref(leagueId, 'activity'),
       icon: <Activity className="h-5 w-5" />,
       active: inLeague('activity'),
     },
     {
       label: 'Governance',
-      href: leagueId ? `/leagues/${leagueId}/governance` : null,
+      href: leagueSectionHref(leagueId, 'governance'),
       icon: <Scale className="h-5 w-5" />,
       active: inLeague('governance'),
     },
     {
       label: 'History',
-      href: leagueId ? `/leagues/${leagueId}/history` : null,
+      href: leagueSectionHref(leagueId, 'history'),
       icon: <History className="h-5 w-5" />,
       active: inLeague('history'),
     },
     {
       label: 'Integrations',
-      href: leagueId ? `/leagues/${leagueId}/integrations` : null,
+      href: leagueSectionHref(leagueId, 'integrations'),
       icon: <Plug className="h-5 w-5" />,
       active: inLeague('integrations'),
     },
     {
       label: 'Members',
-      href: leagueId ? `/leagues/${leagueId}/members` : null,
+      href: leagueSectionHref(leagueId, 'members'),
       icon: <Users className="h-5 w-5" />,
       active: inLeague('members'),
     },
     {
       label: 'Settings',
-      href: leagueId ? `/leagues/${leagueId}/settings` : null,
+      href: leagueSectionHref(leagueId, 'settings'),
       icon: <Settings className="h-5 w-5" />,
       active: inLeague('settings'),
     },
   ]
 
-  // League switcher label: the fetched real name, else a neutral placeholder.
-  const leagueSwitcherLabel = leagueName ?? (leagueId ? 'Loading…' : 'Select League')
+  const switcher = (
+    <LeagueSwitcher
+      leagues={leagues}
+      activeLeagueId={leagueId}
+      activeLeagueName={activeLeagueName}
+      canSwitch={canSwitch}
+      onSelect={selectLeague}
+    />
+  )
 
   // Desktop sidebar
   const desktopSidebar = (
@@ -168,19 +272,14 @@ export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavPro
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-4 py-6 space-y-2">
+      <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
         {navItems.map((item) => (
           <NavLink key={item.label} item={item} />
         ))}
       </nav>
 
       {/* League switcher */}
-      <div className="px-4 py-4 border-t border-border">
-        <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-secondary/50 text-secondary-foreground">
-          <span className="text-sm font-medium truncate">{leagueSwitcherLabel}</span>
-          <ChevronDown className="h-4 w-4 opacity-50" />
-        </div>
-      </div>
+      <div className="px-4 py-4 border-t border-border">{switcher}</div>
 
       {/* User email + Sign out */}
       <div className="px-4 py-4 border-t border-border mt-auto">
@@ -242,12 +341,7 @@ export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavPro
             <NavLink key={item.label} item={item} />
           ))}
         </nav>
-        <div className="px-4 py-4 border-t border-border">
-          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-secondary/50 text-secondary-foreground">
-            <span className="text-sm font-medium truncate">{leagueSwitcherLabel}</span>
-            <ChevronDown className="h-4 w-4 opacity-50" />
-          </div>
-        </div>
+        <div className="px-4 py-4 border-t border-border">{switcher}</div>
         <div className="px-4 py-4 border-t border-border mt-auto">
           <div className="flex items-center justify-between px-3 py-2">
             <div className="truncate text-sm text-muted-foreground">{userEmail}</div>
@@ -264,6 +358,124 @@ export default function AppNav({ fallbackLeagueId = null, userEmail }: AppNavPro
       {mobileHeader}
       {mobileDrawer}
     </>
+  )
+}
+
+/**
+ * Current league, and — for a viewer in more than one league — the dropdown
+ * that switches between them. A single-league viewer gets the name only: there
+ * is nothing to switch to, so no affordance is offered.
+ */
+function LeagueSwitcher({
+  leagues,
+  activeLeagueId,
+  activeLeagueName,
+  canSwitch,
+  onSelect,
+}: {
+  leagues: NavLeague[]
+  activeLeagueId: string | null
+  activeLeagueName: string | null
+  canSwitch: boolean
+  onSelect: (leagueId: string) => void
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const panelId = useId()
+
+  // Close on outside click / Escape. `mousedown` (not `click`) so the menu is
+  // already gone before the element underneath reacts to the click.
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setIsOpen(false)
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false)
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('touchstart', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('touchstart', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isOpen])
+
+  const label = activeLeagueName ?? NO_LEAGUE_LABEL
+
+  if (!canSwitch) {
+    return (
+      <div className="flex items-center px-3 py-2 rounded-lg bg-secondary/50 text-secondary-foreground">
+        <span className="text-sm font-medium truncate" title={label}>
+          {label}
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen((open) => !open)}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        aria-controls={panelId}
+        aria-label={`Current league: ${label}. Switch league`}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 rounded-lg bg-secondary/50 text-secondary-foreground hover:bg-accent transition-colors"
+      >
+        <span className="min-w-0 text-left">
+          <span className="block text-[0.6875rem] uppercase tracking-wide text-muted-foreground">
+            League
+          </span>
+          <span className="block text-sm font-medium truncate" title={label}>
+            {label}
+          </span>
+        </span>
+        <ChevronDown
+          aria-hidden
+          className={cn('h-4 w-4 shrink-0 opacity-60 transition-transform', isOpen && 'rotate-180')}
+        />
+      </button>
+
+      {isOpen && (
+        <div
+          id={panelId}
+          role="menu"
+          aria-label="Switch league"
+          className="absolute bottom-full left-0 right-0 z-50 mb-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-popover text-popover-foreground shadow-lg"
+        >
+          {leagues.map((league) => {
+            const isActive = league.id === activeLeagueId
+            return (
+              <button
+                key={league.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={isActive}
+                onClick={() => {
+                  setIsOpen(false)
+                  onSelect(league.id)
+                }}
+                className={cn(
+                  'flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-accent',
+                  isActive ? 'font-medium text-foreground' : 'text-muted-foreground'
+                )}
+              >
+                <span className="truncate" title={league.name}>
+                  {league.name}
+                </span>
+                {isActive && <Check aria-hidden className="h-4 w-4 shrink-0" />}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }
 
