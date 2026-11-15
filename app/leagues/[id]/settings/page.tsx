@@ -7,6 +7,7 @@ import { Settings, Trophy, Users, Hash, Calendar, Mail, Globe } from 'lucide-rea
 import { db } from '@/src/lib/db'
 import { updateLeagueFinancials } from '@/app/actions/leagues'
 import type { LeagueRow } from '@/src/db/rows'
+import FormatSeasonForm from './format-season-form'
 
 export const dynamic = 'force-dynamic'
 
@@ -92,7 +93,7 @@ export default async function LeagueSettingsPage({ params }: { params: Promise<{
         <div className="flex items-center gap-2 rounded-full bg-muted px-4 py-2">
           <Settings className="h-5 w-5 text-muted-foreground" />
           <span className="text-sm font-medium text-foreground">
-            Read‑only for now
+            {ctx.isCommissioner ? 'Commissioner editable' : 'Read‑only'}
           </span>
         </div>
       </div>
@@ -119,6 +120,23 @@ export default async function LeagueSettingsPage({ params }: { params: Promise<{
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Format & season (commissioner editable) */}
+      <div className="rounded-2xl border border-border bg-card p-8">
+        <h3 className="mb-1 text-xl font-semibold text-foreground">
+          Format &amp; season
+        </h3>
+        <p className="mb-6 text-sm text-muted-foreground">
+          The league&apos;s scoring format and the year of its current season.
+          Changes take effect immediately.
+        </p>
+        <FormatSeasonForm
+          leagueId={id}
+          format={ctx.format}
+          currentSeasonYear={season.seasonYear}
+          canEdit={ctx.isCommissioner}
+        />
       </div>
 
       {/* Season rollover */}
@@ -238,11 +256,12 @@ export default async function LeagueSettingsPage({ params }: { params: Promise<{
           </div>
           <div>
             <h3 className="text-lg font-semibold text-primary dark:text-primary/90">
-              Settings are read‑only in this phase
+              Some settings are still read‑only
             </h3>
             <p className="mt-2 text-primary/80 dark:text-primary/70">
-              These fields cannot be edited yet. League renaming, sport/format
-              changes, and commissioner hand‑off will arrive in a future release.
+              Format, current season year and financial options can be edited
+              above. League name/sport changes, commissioner hand‑off and logo
+              upload will arrive in a future release.
             </p>
           </div>
         </div>
