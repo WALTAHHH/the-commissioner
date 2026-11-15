@@ -6,9 +6,13 @@ import { displayName, formatDate, prettifyLabel } from '@/src/lib/display'
 import { isUuid } from '@/src/lib/invitations'
 import { buildTeamMatching } from '@/src/lib/integrations/team-matching'
 import { loadMemberObligationsSection } from '@/src/lib/member-obligations'
+import { loadMemberVotesSection } from '@/src/lib/member-votes'
+import { loadMemberAwardsSection } from '@/src/lib/member-awards'
 import RoleBadge from '@/src/components/role-badge'
 import PendingBadge, { IntendedRoleSuffix } from '../pending-badge'
 import MemberObligationsSection from './obligations-section'
+import MemberVotesSection from './votes-section'
+import MemberAwardsSection from './awards-section'
 import { ArrowLeft, Plug, Users } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
@@ -97,16 +101,26 @@ export default async function MemberProfilePage({
   const pending = member.isPlaceholder === true
   const isCommissioner = ctx.isCommissioner
 
-  // Obligations are ACL-resolved in their own module: the loader decides
-  // whether this viewer may see this member's money at all (honouring the
-  // league's `financial_visibility`), so the page never branches on it — the
-  // section renders its own restricted state when the viewer is not entitled.
-  const obligations = await loadMemberObligationsSection({
-    leagueId: id,
-    memberId,
-    viewerUserId: user.id,
-    viewerIsCommissioner: isCommissioner,
-  })
+  // The three record sections load in parallel. Obligations and awards are
+  // ACL-resolved in their own modules: each loader decides whether this viewer
+  // may see the league's money at all (honouring `financial_visibility`), so
+  // the page never branches on it — the section renders its own restricted
+  // state when the viewer is not entitled. Votes carry no such gate.
+  const [obligations, votes, awards] = await Promise.all([
+    loadMemberObligationsSection({
+      leagueId: id,
+      memberId,
+      viewerUserId: user.id,
+      viewerIsCommissioner: isCommissioner,
+    }),
+    loadMemberVotesSection(id, memberId),
+    loadMemberAwardsSection({
+      leagueId: id,
+      memberId,
+      viewerUserId: user.id,
+      viewerIsCommissioner: isCommissioner,
+    }),
+  ])
 
   return (
     <div className="space-y-8">
@@ -186,6 +200,12 @@ export default async function MemberProfilePage({
         memberName={displayName(member)}
         view={obligations}
       />
+
+      {/* Votes — every poll this member has voted in. */}
+      <MemberVotesSection leagueId={id} votes={votes} />
+
+      {/* Awards & honours — championships, awards and prize wins. */}
+      <MemberAwardsSection awards={awards.awards} showAmounts={awards.showAmounts} />
 
       {/* Back link */}
       <div className="border-t border-border pt-6">
